@@ -1,3 +1,3 @@
-pub mod locate;
-pub mod library;
 pub mod manifest;
+pub mod library;
+pub mod locate;
