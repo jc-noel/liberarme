@@ -1,3 +1,4 @@
+// Discovers steam library folders
 use std::path::PathBuf;
 
 /// Parses VDF text and returns list of directory paths
