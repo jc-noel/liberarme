@@ -2,6 +2,24 @@
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
+#[derive(Debug)]
+pub enum AppManifestReadError {
+    Io(std::io::Error),
+    Parse(keyvalues_parser::error::Error),
+}
+
+impl From<std::io::Error> for AppManifestReadError {
+    fn from(error: std::io::Error) -> Self {
+        Self::Io(error)
+    }
+}
+
+impl From<keyvalues_parser::error::Error> for AppManifestReadError {
+    fn from(error: keyvalues_parser::error::Error) -> Self {
+        Self::Parse(error)
+    }
+}
+
 // structure for serde to parse into
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct AppManifest {
@@ -13,67 +31,72 @@ pub struct AppManifest {
 }
 
 /// reads `appmanifest_*.acf` and parses it
-pub fn read_app_manifest(path: &Path) -> Option<AppManifest> {
-    let content = std::fs::read_to_string(path).ok()?;
-    parse_app_manifest(&content)
+pub fn read_app_manifest(path: &Path) -> Result<Option<AppManifest>, AppManifestReadError> {
+    let content = std::fs::read_to_string(path)?;
+    Ok(parse_app_manifest(&content)?)
 }
 
 /// parses vdf content of the steam appmanifest file
-pub fn parse_app_manifest(vdf_content: &str) -> Option<AppManifest> {
+pub fn parse_app_manifest(
+    vdf_content: &str,
+) -> Result<Option<AppManifest>, keyvalues_parser::error::Error> {
     let vdf = keyvalues_parser::Parser::new()
         .literal_special_chars(true)
-        .parse(vdf_content)
-        .ok()?;
+        .parse(vdf_content)?;
 
     if vdf.key != "AppState" {
-        return None;
+        return Ok(None);
     }
 
-    let app_state = vdf.value.get_obj()?;
+    let manifest = (|| {
+        let app_state = vdf.value.get_obj()?;
 
-    let app_id = app_state
-        .get("appid")?
-        .first()?
-        .get_str()?
-        .parse()
-        .ok()?;
-
-    let name = app_state
-        .get("name")?
-        .first()?
-        .get_str()?
-        .to_string();
-
-    let install_dir = PathBuf::from(
-        app_state
-            .get("installdir")?
+        let app_id = app_state
+            .get("appid")?
             .first()?
             .get_str()?
-    );
+            .parse()
+            .ok()?;
 
-    // parse SizeOnDisk, default to 0 if missing
-    let install_size = app_state
-        .get("SizeOnDisk")
-        .and_then(|vals| vals.first())
-        .and_then(|v| v.get_str())
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0);
+        let name = app_state
+            .get("name")?
+            .first()?
+            .get_str()?
+            .to_string();
 
-    // parse lastupdated timestamp
-    let last_updated = app_state
-        .get("lastupdated")
-        .and_then(|vals| vals.first())
-        .and_then(|v| v.get_str())
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0);
+        let install_dir = PathBuf::from(
+            app_state
+                .get("installdir")?
+                .first()?
+                .get_str()?
+        );
 
-    Some(AppManifest {
-        app_id,
-        name,
-        install_dir,
-        install_size,
-        last_updated,
-    })
+        // parse SizeOnDisk, default to 0 if missing
+        let install_size = app_state
+            .get("SizeOnDisk")
+            .and_then(|vals| vals.first())
+            .and_then(|v| v.get_str())
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+
+        // parse lastupdated timestamp
+        let last_updated = app_state
+            .get("lastupdated")
+            .and_then(|vals| vals.first())
+            .and_then(|v| v.get_str())
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+
+        Some(AppManifest {
+            app_id,
+            name,
+            install_dir,
+            install_size,
+            last_updated,
+        })
+    })();
+
+    Ok(manifest)
 }
 
 #[cfg(test)]
@@ -93,7 +116,7 @@ mod tests {
 }
 "#;
 
-        let parsed = parse_app_manifest(manifest_content);
+        let parsed = parse_app_manifest(manifest_content).unwrap();
         assert_eq!(
             parsed,
             Some(AppManifest {
@@ -117,7 +140,7 @@ mod tests {
 }
 "#;
 
-        let parsed = parse_app_manifest(manifest_content);
+        let parsed = parse_app_manifest(manifest_content).unwrap();
         assert_eq!(
             parsed,
             Some(AppManifest {
@@ -131,8 +154,12 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_invalid_app_manifest_returns_none() {
-        assert_eq!(parse_app_manifest("not a vdf"), None);
-        assert_eq!(parse_app_manifest("\"NotAppState\" {}"), None);
+    fn test_parse_invalid_app_manifest_returns_error() {
+        assert!(parse_app_manifest("not a vdf").is_err());
+    }
+
+    #[test]
+    fn test_parse_non_app_manifest_returns_none() {
+        assert_eq!(parse_app_manifest("\"NotAppState\" {}").unwrap(), None);
     }
 }
