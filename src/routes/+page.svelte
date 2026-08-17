@@ -1,5 +1,6 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
+  import { onMount } from "svelte";
 
   type GameRecord = {
     id: string;
@@ -50,6 +51,24 @@
       loading = false;
     }
   }
+
+  async function loadInstalledGames() {
+    loading = true;
+    error = "";
+
+    try {
+      const result = await invoke<GameRecord[]>("get_installed_games");
+      games = result;
+    } catch (err) {
+      error = err instanceof Error ? err.message : "Failed to load installed games.";
+    } finally {
+      loading = false;
+    }
+  }
+
+  onMount(() => {
+    loadInstalledGames();
+  });
 </script>
 
 <main class="shell">
@@ -58,7 +77,7 @@
       <div class="brand-mark">L</div>
       <div>
         <div class="brand-name">Liberarme</div>
-        <div class="brand-subtitle">Local-first library auditor</div>
+        <div class="brand-subtitle">audit/backup your games</div>
       </div>
     </div>
 
