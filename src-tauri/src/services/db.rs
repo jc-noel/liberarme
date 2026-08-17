@@ -1,4 +1,4 @@
-use rusqlite::{params, Connection, Result};
+use rusqlite::{params, Connection, OptionalExtension, Result};
 use serde::{Deserialize, Serialize};
 
 /// game record struct to store in sqlite db
@@ -16,6 +16,8 @@ pub struct GameRecord {
 /// inits sqlite db schema
 /// creates `games` table if does not exist.
 pub fn init_db(conn: &Connection) -> Result<()> {
+
+    // games table
     conn.execute(
         "CREATE TABLE IF NOT EXISTS games (
             id TEXT PRIMARY KEY,
@@ -29,6 +31,16 @@ pub fn init_db(conn: &Connection) -> Result<()> {
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
         )", 
         []
+    )?;
+
+    // app settings table
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )",
+        [],
     )?;
 
     Ok(())
@@ -95,6 +107,30 @@ pub fn get_all_games(conn: &Connection) -> Result<Vec<GameRecord>> {
     Ok(games)
 }
 
+/// inserts or updates a setting value by key
+pub fn set_setting(conn: &Connection, key: &str, value: &str) -> Result<()> {
+    conn.execute(
+        "INSERT INTO app_settings (key, value, updated_at)
+         VALUES (?1, ?2, CURRENT_TIMESTAMP)
+         ON CONFLICT(key) DO UPDATE SET
+             value = excluded.value,
+             updated_at = CURRENT_TIMESTAMP",
+        params![key, value],
+    )?;
+
+    Ok(())
+}
+
+/// fetches a setting by key
+pub fn get_setting(conn: &Connection, key: &str) -> Result<Option<String>> {
+    conn.query_row(
+        "SELECT value FROM app_settings WHERE key = ?1",
+        params![key],
+        |row| row.get(0),
+    )
+    .optional()
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -140,5 +176,37 @@ mod tests {
         assert_eq!(updated_games.len(), 1); // Still 1 record
         assert_eq!(updated_games[0].title, "Portal (Updated)");
         assert_eq!(updated_games[0].install_size, 5000000000);
+    }
+
+    #[test]
+    fn test_set_and_get_setting() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_db(&conn).unwrap();
+
+        set_setting(&conn, "steam.api_key", "test_key_123").unwrap();
+
+        let value = get_setting(&conn, "steam.api_key").unwrap();
+        assert_eq!(value, Some("test_key_123".to_string()));
+    }
+
+    #[test]
+    fn test_set_setting_overwrites_existing_key() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_db(&conn).unwrap();
+
+        set_setting(&conn, "steam.steam_id64", "11111111111111111").unwrap();
+        set_setting(&conn, "steam.steam_id64", "76561198000000000").unwrap();
+
+        let value = get_setting(&conn, "steam.steam_id64").unwrap();
+        assert_eq!(value, Some("76561198000000000".to_string()));
+    }
+
+    #[test]
+    fn test_get_setting_missing_key_returns_none() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_db(&conn).unwrap();
+
+        let value = get_setting(&conn, "steam.missing").unwrap();
+        assert_eq!(value, None);
     }
 }
