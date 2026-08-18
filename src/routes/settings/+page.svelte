@@ -10,10 +10,37 @@
   let statusMessage = "";
   let errorMessage = "";
 
+  // ux state
+  let apiKeyTouched = false;
+  let steamIdTouched = false;
+  let submitAttempted = false;
+
   type SteamSettings = {
     api_key: string | null;
     steam_id64: string | null;
   };
+
+  function validateSteamApiKey(value: string): string | null {
+    const v = value.trim();
+    if (!v) return "Steam API key is required.";
+    if (v.length < 8) return "Steam API key looks too short.";
+    return null;
+  }
+
+  function validateSteamId64(value: string): string | null {
+    const v = value.trim();
+    if (!v) return "SteamID64 is required.";
+    if(!/^\d{17}$/.test(v)) return "SteamID64 must be exactly 17 numeric digits.";
+    return null;
+  }
+
+  $: apiKeyErrorRaw = validateSteamApiKey(steamApiKey);
+  $: steamIdErrorRaw = validateSteamId64(steamId64);
+
+  $: apiKeyError = (apiKeyTouched || submitAttempted) && !!apiKeyErrorRaw;
+  $: steamIdError = (steamIdTouched || submitAttempted) && !!steamIdErrorRaw;
+
+  $: canSubmit = !loading && !saving && !apiKeyErrorRaw && !steamIdErrorRaw;
 
   async function loadSettings() {
     loading = true;
@@ -32,10 +59,16 @@
   }
 
   async function saveSettings() {
-    saving = true;
     statusMessage = "";
     errorMessage = "";
 
+    // frontend guard
+    if (apiKeyErrorRaw || steamIdErrorRaw) {
+      errorMessage = apiKeyErrorRaw ?? steamIdErrorRaw ?? "Please fix validation errors.";
+      return;
+    }
+
+    saving = true;
     try {
       await invoke("set_steam_settings", {
         apiKey: steamApiKey,
@@ -73,7 +106,11 @@
       autocomplete="off"
       spellcheck="false"
       placeholder="Enter your Steam Web API key"
+      aria-invalid={apiKeyError ? "true" : "false"}
     />
+    {#if apiKeyError}
+      <p class="field-error">{apiKeyErrorRaw}</p>
+    {/if}
   </div>
 
   <div class="field">
@@ -85,10 +122,14 @@
       autocomplete="off"
       spellcheck="false"
       placeholder="7656119..."
+      aria-invalid={steamIdError ? "true" : "false"}
     />
+    {#if steamIdError}
+      <p class="field-error">{steamIdErrorRaw}</p>
+    {/if}
   </div>
 
-  <button class="save-btn" on:click={saveSettings} disabled={saving || loading}>
+  <button class="save-btn" on:click={saveSettings} disabled={!canSubmit}>
     {saving ? "Saving..." : "Save Settings"}
   </button>
 
@@ -178,5 +219,15 @@
     color: #f87171;
     margin-top: 12px;
     margin-bottom: 0;
+  }
+
+  .field-error {
+    margin: 0;
+    color: #fca5a5;
+    font-size: 0.9rem;
+  }
+
+  input[aria-invalid="true"] {
+    border-color: #f87171;
   }
 </style>

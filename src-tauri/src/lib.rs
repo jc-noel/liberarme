@@ -40,6 +40,9 @@ fn set_steam_settings(
     api_key: String,
     steam_id64: String,
 ) -> Result<(), String> {
+    // validate input before saving to db
+    validate_steam_settings_input(&api_key, &steam_id64)?;
+
     let conn = state.db_conn.lock().map_err(|e| e.to_string())?;
 
     db::set_setting(&conn, "steam.api_key", &api_key).map_err(|e| e.to_string())?;
@@ -57,6 +60,30 @@ fn get_steam_settings(state: State<AppState>) -> Result<SteamSettings, String> {
     let steam_id64 = db::get_setting(&conn, "steam.steam_id64").map_err(|e| e.to_string())?;
 
     Ok(SteamSettings { api_key, steam_id64 })
+}
+
+/// function to validate input before saving steam settings
+fn validate_steam_settings_input(api_key: &str, steam_id64: &str) -> Result<(), String> {
+    let api_key_trimmed = api_key.trim();
+    let steam_id_trimmed = steam_id64.trim();
+
+    if api_key_trimmed.is_empty() {
+        return Err("Steam API key is required.".to_string());
+    }
+
+    if api_key_trimmed.len() < 8 {
+        return Err("Steam API key looks too short".to_string());
+    }
+
+    if steam_id_trimmed.is_empty() {
+        return Err("SteamID64 is required".to_string());
+    }
+
+    if steam_id_trimmed.len() != 17 || !steam_id_trimmed.chars().all(|c| c.is_ascii_digit()) {
+        return Err("SteamID64 must be exactly 17 numeric digits".to_string());
+    }
+
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
