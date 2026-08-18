@@ -71,432 +71,182 @@
   });
 </script>
 
-<main class="shell">
-  <aside class="sidebar">
-    <div class="brand">
-      <div class="brand-mark">L</div>
-      <div>
-        <div class="brand-name">Liberarme</div>
-        <div class="brand-subtitle">audit/backup your games</div>
-      </div>
-    </div>
+<section class="page-header">
+  <div>
+    <h1>Library</h1>
+    <p>Scan locally first. Keep everything in one place.</p>
+  </div>
 
-    <nav class="nav">
-      <a class="nav-item active" href="/">Library</a>
-      <a class="nav-item" href="/">Settings</a>
-    </nav>
+  <button class="scan-btn">
+    {loading ? "Scanning..." : "Scan Library"}
+  </button>
+</section>
 
-    <div class="sidebar-card">
-      <div class="sidebar-card-label">Status</div>
-      <div class="sidebar-card-value">
-        {#if loading}
-          Scanning...
-        {:else if games.length > 0}
-          {games.length} games found
-        {:else if hasScanned}
-          No games found
-        {:else}
-          Ready to scan
-        {/if}
-      </div>
-    </div>
-  </aside>
+<section class="stats-grid">
+  <article class="stat-card">
+    <h2>Games</h2>
+    <p>{games.length}</p>
+  </article>
 
-  <section class="content">
-    <header class="topbar">
-      <div>
-        <h1>Library</h1>
-        <p>Scan locally first. Keep everything in one place.</p>
-      </div>
+  <article class="stat-card">
+    <h2>Source</h2>
+    <p>Steam</p>
+  </article>
 
-      <button class="primary-button" onclick={scanLibrary} disabled={loading}>
-        {loading ? "Scanning..." : "Scan Library"}
-      </button>
-    </header>
+  <article class="stat-card">
+    <h2>Mode</h2>
+    <p>Local scan</p>
+  </article>
+</section>
 
-    <section class="summary-grid">
-      <article class="summary-card">
-        <div class="summary-label">Games</div>
-        <div class="summary-value">{games.length}</div>
-      </article>
+{#if error}
+  <p class="error">{error}</p>
+{/if}
 
-      <article class="summary-card">
-        <div class="summary-label">Source</div>
-        <div class="summary-value">Steam</div>
-      </article>
+{#if loading}
+  <p class="muted">Scanning your Steam folders...</p>
+{/if}
 
-      <article class="summary-card">
-        <div class="summary-label">Mode</div>
-        <div class="summary-value">Local scan</div>
-      </article>
-    </section>
-
-    {#if error}
-      <div class="message error">{error}</div>
-    {/if}
-
-    {#if loading}
-      <div class="message muted">Scanning your Steam folders...</div>
-    {/if}
-
-    {#if !loading && !hasScanned}
-      <div class="empty-state">
-        No games scanned yet. Click <strong>Scan Library</strong> to begin.
-      </div>
-    {/if}
-
-    {#if !loading && hasScanned && games.length === 0}
-      <div class="empty-state">
-        No games found on this machine.
-      </div>
-    {/if}
-
-    {#if games.length > 0}
-      <div class="table-shell">
-        <table>
-          <thead>
-            <tr>
-              <th>Game</th>
-              <th>Status</th>
-              <th>App ID</th>
-              <th>Size</th>
-              <th>Last Updated</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each games as game}
-              <tr>
-                <td>
-                  <div class="game-title">{game.title}</div>
-                  <div class="game-subtitle">{game.install_path}</div>
-                </td>
-                <td>
-                  <div class="badges">
-                    <span class="badge badge-installed">Installed</span>
-                    <span class="badge badge-local">Local</span>
-                  </div>
-                </td>
-                <td class="mono">{game.steam_app_id}</td>
-                <td class="mono">{formatBytes(game.install_size)}</td>
-                <td class="mono">{formatDate(game.last_updated)}</td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
-    {/if}
+{#if !loading && !hasScanned}
+  <section class="panel">
+    <p>No games scanned yet. Click <strong>Scan Library</strong> to begin.</p>
   </section>
-</main>
+{/if}
+
+{#if !loading && hasScanned && games.length === 0}
+  <section class="panel">
+    <p>No games found on this machine.</p>
+  </section>
+{/if}
+
+{#if games.length > 0}
+  <section class="panel">
+    <table class="games-table">
+      <thead>
+        <tr>
+          <th>Game</th>
+          <th>Status</th>
+          <th>App ID</th>
+          <th>Size</th>
+          <th>Last Updated</th>
+        </tr>
+      </thead>
+      <tbody>
+        {#each games as game}
+          <tr>
+            <td>
+              <div>{game.title}</div>
+              <small>{game.install_path}</small>
+            </td>
+            <td>Installed · Local</td>
+            <td>{game.steam_app_id}</td>
+            <td>{formatBytes(game.install_size)}</td>
+            <td>{formatDate(game.last_updated)}</td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  </section>
+{/if}
 
 <style>
-  :global(body) {
-    margin: 0;
-    font-family:
-      Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-      sans-serif;
-    background:
-      radial-gradient(circle at top, rgba(109, 94, 252, 0.08), transparent 28%),
-      #0b0f14;
-    color: #e6eaf0;
-  }
-
-  :global(a) {
-    color: inherit;
-    text-decoration: none;
-  }
-
-  .shell {
-    min-height: 100vh;
-    display: grid;
-    grid-template-columns: 280px 1fr;
-  }
-
-  .sidebar {
-    padding: 24px 18px;
-    border-right: 1px solid #1b2430;
-    background: rgba(13, 18, 24, 0.88);
-    backdrop-filter: blur(12px);
-  }
-
-  .brand {
+  .page-header {
     display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: 28px;
-  }
-
-  .brand-mark {
-    width: 42px;
-    height: 42px;
-    border-radius: 14px;
-    display: grid;
-    place-items: center;
-    background: #6d5efc;
-    color: white;
-    font-weight: 700;
-    box-shadow: 0 8px 24px rgba(109, 94, 252, 0.25);
-  }
-
-  .brand-name {
-    font-weight: 700;
-    font-size: 1rem;
-  }
-
-  .brand-subtitle {
-    font-size: 0.85rem;
-    color: #91a0b6;
-  }
-
-  .nav {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    margin-bottom: 20px;
-  }
-
-  .nav-item {
-    padding: 10px 12px;
-    border-radius: 10px;
-    color: #aab4c3;
-    transition: background 0.15s ease, color 0.15s ease;
-  }
-
-  .nav-item:hover,
-  .nav-item.active {
-    background: #16202c;
-    color: #f5f7fb;
-  }
-
-  .sidebar-card {
-    margin-top: 18px;
-    padding: 14px;
-    border: 1px solid #1b2430;
-    border-radius: 14px;
-    background: #0f151d;
-  }
-
-  .sidebar-card-label {
-    color: #91a0b6;
-    font-size: 0.8rem;
-    margin-bottom: 6px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-  }
-
-  .sidebar-card-value {
-    font-weight: 600;
-  }
-
-  .content {
-    padding: 32px;
-  }
-
-  .topbar {
-    display: flex;
-    align-items: flex-start;
     justify-content: space-between;
-    gap: 20px;
+    gap: 16px;
+    align-items: center;
     margin-bottom: 20px;
   }
 
-  h1 {
-    margin: 0 0 8px 0;
-    font-size: 2rem;
-    line-height: 1.1;
-  }
-
-  .topbar p {
+  .page-header h1 {
     margin: 0;
-    color: #91a0b6;
+    font-size: 2.2rem;
   }
 
-  .primary-button {
-    border: 1px solid rgba(109, 94, 252, 0.45);
-    border-radius: 12px;
-    padding: 12px 16px;
-    background: linear-gradient(180deg, #7868ff, #6354f4);
-    color: white;
-    font-weight: 600;
+  .page-header p {
+    margin: 6px 0 0;
+    color: #94a3b8;
+    font-size: 1.05rem;
+  }
+
+  .scan-btn {
+    border: none;
+    border-radius: 14px;
+    padding: 11px 18px;
+    color: #fff;
+    font-weight: 700;
+    background: linear-gradient(135deg, #5b7cff, #7c3aed);
     cursor: pointer;
-    transition: transform 0.12s ease, filter 0.12s ease;
-    box-shadow: 0 10px 24px rgba(99, 84, 244, 0.18);
   }
 
-  .primary-button:hover:not(:disabled) {
-    transform: translateY(-1px);
-    filter: brightness(1.05);
-  }
-
-  .primary-button:disabled {
-    cursor: not-allowed;
-    opacity: 0.75;
-  }
-
-  .summary-grid {
+  .stats-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 12px;
-    margin-bottom: 18px;
+    margin-bottom: 16px;
   }
 
-  .summary-card {
-    padding: 14px 16px;
-    border: 1px solid #1b2430;
+  .stat-card {
+    border: 1px solid #243244;
     border-radius: 14px;
-    background: #0f151d;
+    padding: 12px 14px;
+    background: #111a25;
   }
 
-  .summary-label {
-    color: #91a0b6;
-    font-size: 0.8rem;
+  .stat-card h2 {
+    margin: 0 0 4px;
+    font-size: 0.82rem;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    margin-bottom: 8px;
+    color: #94a3b8;
   }
 
-  .summary-value {
-    font-size: 1.1rem;
+  .stat-card p {
+    margin: 0;
+    font-size: 1.25rem;
     font-weight: 700;
   }
 
-  .message {
-    margin-bottom: 16px;
-    padding: 12px 14px;
-    border-radius: 12px;
-    border: 1px solid #1b2430;
+  .panel {
+    border: 1px dashed #2a3b4f;
+    border-radius: 14px;
+    padding: 16px;
+    background: #111a25;
+    color: #cbd5e1;
   }
 
-  .message.error {
-    background: rgba(184, 74, 74, 0.12);
-    border-color: rgba(184, 74, 74, 0.35);
-    color: #ffb7b7;
+  .muted {
+    color: #94a3b8;
   }
 
-  .message.muted {
-    background: #111820;
-    color: #91a0b6;
+  .error {
+    color: #f87171;
+    font-weight: 600;
   }
 
-  .empty-state {
-    padding: 24px;
-    border: 1px dashed #263241;
-    border-radius: 16px;
-    background: #0f151d;
-    color: #91a0b6;
-  }
-
-  .table-shell {
-    border: 1px solid #1b2430;
-    border-radius: 16px;
-    overflow: hidden;
-    background: #0f151d;
-  }
-
-  table {
+  .games-table {
     width: 100%;
     border-collapse: collapse;
   }
 
-  thead {
-    background: #101823;
-  }
-
-  th,
-  td {
-    padding: 14px 16px;
+  .games-table th,
+  .games-table td {
     text-align: left;
-    border-bottom: 1px solid #1b2430;
+    border-bottom: 1px solid #223041;
+    padding: 10px 8px;
     vertical-align: top;
   }
 
-  th {
-    color: #91a0b6;
-    font-size: 0.8rem;
+  .games-table thead th {
+    color: #94a3b8;
+    font-size: 0.82rem;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    font-weight: 600;
   }
 
-  tbody tr:hover {
-    background: rgba(255, 255, 255, 0.02);
-  }
-
-  .game-title {
-    font-weight: 700;
-    margin-bottom: 4px;
-  }
-
-  .game-subtitle {
-    color: #91a0b6;
-    font-size: 0.9rem;
-    word-break: break-all;
-  }
-
-  .badges {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
-  .badge {
-    display: inline-flex;
-    align-items: center;
-    border-radius: 999px;
-    padding: 5px 10px;
-    font-size: 0.78rem;
-    font-weight: 600;
-    border: 1px solid transparent;
-  }
-
-  .badge-installed {
-    background: rgba(85, 197, 122, 0.12);
-    color: #8ee39f;
-    border-color: rgba(85, 197, 122, 0.2);
-  }
-
-  .badge-local {
-    background: rgba(109, 94, 252, 0.12);
-    color: #b2a8ff;
-    border-color: rgba(109, 94, 252, 0.2);
-  }
-
-  .mono {
-    font-variant-numeric: tabular-nums;
-    color: #d6dbe3;
-    white-space: nowrap;
-  }
-
-  @media (max-width: 1000px) {
-    .shell {
-      grid-template-columns: 1fr;
-    }
-
-    .sidebar {
-      border-right: 0;
-      border-bottom: 1px solid #1b2430;
-    }
-
-    .summary-grid {
-      grid-template-columns: 1fr;
-    }
-
-    .topbar {
-      flex-direction: column;
-      align-items: stretch;
-    }
-  }
-
-  @media (max-width: 720px) {
-    .content {
-      padding: 20px;
-    }
-
-    .table-shell {
-      overflow-x: auto;
-    }
-
-    table {
-      min-width: 760px;
-    }
+  small {
+    color: #94a3b8;
+    display: block;
+    margin-top: 2px;
   }
 </style>
