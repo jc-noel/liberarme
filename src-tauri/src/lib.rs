@@ -2,7 +2,7 @@ mod services;
 
 use rusqlite::Connection;
 use serde::Serialize;
-use services::db::{self, GameRecord};
+use services::db::{self, GameRecord, SteamSyncMetadata};
 use services::steam::scanner;
 use services::steam::vanity;
 use std::sync::Mutex;
@@ -135,6 +135,46 @@ fn resolve_steam_id(input: String) -> ResolveSteamIdResult {
     }
 }
 
+/// validates stored steam creds by checking if non-empty
+/// updates last_validated_at timestamp when sucessfull
+/// returns metadata with validation status
+#[tauri::command]
+fn validate_steam_credentials(state: State<AppState>) -> Result<SteamSyncMetadata, String> {
+    let conn = state.db_conn.lock().map_err(|e| e.to_string())?;
+
+    // get current settings
+    let api_key = db::get_setting(&conn, "steam.api_key")
+        .map_err(|e| e.to_string())?;
+    let steam_id64 = db::get_setting(&conn, "steam.steam_id64")
+        .map_err(|e| e.to_string())?;
+
+    // check if both present
+    let api_key_valid = api_key.as_ref()
+        .map(|k| !k.trim().is_empty()).unwrap_or(false);
+    let steam_id_valid = steam_id64.as_ref()
+        .map(|id| vanity::validate_steamid64(id)).unwrap_or(false);
+
+    if !api_key_valid || !steam_id_valid {
+        let error_msg = if !api_key_valid {
+            "Steam API key is missing or invalid."
+        } else {
+            "SteamID64 is missing or invalid."
+        };
+
+        // record validation failure
+        db::update_steam_sync_metadata(&conn, "failed", Some(error_msg))
+            .map_err(|e| e.to_string())?;
+
+        return Err(error_msg.to_string());
+    }
+
+    // both valid
+    db::update_steam_validated_at(&conn).map_err(|e| e.to_string())?;
+
+    // return metadata
+    db::get_steam_sync_metadata(&conn).map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -164,7 +204,8 @@ pub fn run() {
             get_installed_games,
             set_steam_settings,
             get_steam_settings,
-            resolve_steam_id
+            resolve_steam_id,
+            validate_steam_credentials
         ])
         .plugin(tauri_plugin_opener::init())
         .run(tauri::generate_context!())

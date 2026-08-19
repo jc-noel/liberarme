@@ -14,6 +14,15 @@ pub struct GameRecord {
     pub synced_at: u64
 }
 
+/// steam sync metadata (timestamps & status info)
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SteamSyncMetadata {
+    pub last_validated_at: Option<u64>, // when creds last validated
+    pub last_sync_at: Option<u64>, // last successful owned games sync
+    pub last_sync_status: Option<String>, // success or failed
+    pub last_sync_error: Option<String>, // error mss if last sync failed
+}
+
 /// inits sqlite db schema
 /// creates `games` table if does not exist.
 pub fn init_db(conn: &Connection) -> Result<()> {
@@ -134,6 +143,65 @@ pub fn get_setting(conn: &Connection, key: &str) -> Result<Option<String>> {
     .optional()
 }
 
+/// gets steam sync metadata from settings
+pub fn get_steam_sync_metadata(conn: &Connection) -> Result<SteamSyncMetadata> {
+    let last_validated_at = get_setting(conn, "steam.last_validated_at")?
+        .and_then(|s| s.parse::<u64>().ok());
+
+    let last_sync_at = get_setting(conn, "steam.last_sync_at")?
+        .and_then(|s| s.parse::<u64>().ok());
+
+    let last_sync_status = get_setting(conn, "steam.last_sync_status")?;
+
+    let last_sync_error = get_setting(conn, "steam.last_sync_error")?;
+
+    Ok(SteamSyncMetadata { 
+        last_validated_at, 
+        last_sync_at, 
+        last_sync_status, 
+        last_sync_error 
+    })
+}
+
+/// updates steam sync metadata after validation or sync attempt
+pub fn update_steam_sync_metadata(
+    conn: &Connection,
+    status: &str, // success or failed
+    error: Option<&str>, // error msg if any
+) -> Result<()> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    // update last_sync_at only on success
+    if status == "success" {
+        set_setting(conn, "steam.last_sync_at", &now.to_string())?;
+        set_setting(conn, "steam.last_sync_status", "success")?;
+        set_setting(conn, "steam.last_sync_error", "")?; // clear error on success
+    } else {
+        // on failure, keep last_sync_at and keep update status/error
+        set_setting(conn, "steam.last_sync_status", "failed")?;
+        if let Some(err_msg) = error {
+            set_setting(conn, "steam.last_sync_error", err_msg)?;
+        }
+    }
+
+    Ok(())
+}
+
+/// updates timestamp when creds were last validated
+pub fn update_steam_validated_at(conn: &Connection) -> Result<()> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    set_setting(conn, "steam.last_validated_at", &now.to_string())?;
+
+    Ok(())
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -220,5 +288,76 @@ mod tests {
 
         let value = get_setting(&conn, "steam.missing").unwrap();
         assert_eq!(value, None);
+    }
+
+        #[test]
+    fn test_get_steam_sync_metadata_empty() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_db(&conn).unwrap();
+
+        let metadata = get_steam_sync_metadata(&conn).unwrap();
+        assert_eq!(metadata.last_validated_at, None);
+        assert_eq!(metadata.last_sync_at, None);
+        assert_eq!(metadata.last_sync_status, None);
+        assert_eq!(metadata.last_sync_error, None);
+    }
+
+    #[test]
+    fn test_update_steam_sync_metadata_success() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_db(&conn).unwrap();
+
+        update_steam_sync_metadata(&conn, "success", None).unwrap();
+
+        let metadata = get_steam_sync_metadata(&conn).unwrap();
+        assert_eq!(metadata.last_sync_status, Some("success".to_string()));
+        assert!(metadata.last_sync_at.is_some());
+        assert_eq!(metadata.last_sync_error, Some("".to_string())); // Empty on success
+    }
+
+    #[test]
+    fn test_update_steam_sync_metadata_failed() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_db(&conn).unwrap();
+
+        let error_msg = "Invalid API key";
+        update_steam_sync_metadata(&conn, "failed", Some(error_msg)).unwrap();
+
+        let metadata = get_steam_sync_metadata(&conn).unwrap();
+        assert_eq!(metadata.last_sync_status, Some("failed".to_string()));
+        assert_eq!(metadata.last_sync_error, Some(error_msg.to_string()));
+        assert_eq!(metadata.last_sync_at, None); // Not updated on failure
+    }
+
+    #[test]
+    fn test_update_steam_validated_at() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_db(&conn).unwrap();
+
+        update_steam_validated_at(&conn).unwrap();
+
+        let metadata = get_steam_sync_metadata(&conn).unwrap();
+        assert!(metadata.last_validated_at.is_some());
+        assert!(metadata.last_validated_at.unwrap() > 0);
+    }
+
+    #[test]
+    fn test_steam_sync_metadata_preserves_previous_sync_on_failure() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_db(&conn).unwrap();
+
+        // First: successful sync
+        update_steam_sync_metadata(&conn, "success", None).unwrap();
+        let first_sync = get_steam_sync_metadata(&conn).unwrap();
+        let first_sync_time = first_sync.last_sync_at;
+        assert!(first_sync_time.is_some());
+
+        // Second: failed sync (should keep first sync time)
+        update_steam_sync_metadata(&conn, "failed", Some("Network error")).unwrap();
+        let metadata = get_steam_sync_metadata(&conn).unwrap();
+        
+        assert_eq!(metadata.last_sync_status, Some("failed".to_string()));
+        assert_eq!(metadata.last_sync_at, first_sync_time); // Preserved!
+        assert_eq!(metadata.last_sync_error, Some("Network error".to_string()));
     }
 }
