@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "liberarme-temp",
+  "productName": "liberarme",
   "version": "0.1.0",
-  "identifier": "com.tauri-app.liberarme-temp",
+  "identifier": "com.tauri-app.liberarme",
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:1420",
@@ -12,9 +12,9 @@
   "app": {
     "windows": [
       {
-        "title": "liberarme-temp",
-        "width": 800,
-        "height": 600
+        "title": "liberarme",
+        "width": 1280,
+        "height": 720
       }
     ],
     "security": {

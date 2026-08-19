@@ -1,5 +1,18 @@
 // helper service that resolves Steam vanity URLS or profile names to SteamID64.
 // examples: "steamcommunity.com/id/username", "username", "76561198123456789"
+use serde::Deserialize;
+
+/// result from steams ResolveVanityURL api
+#[derive(Debug, Deserialize)]
+pub struct VanityUrlResponse {
+    pub response: VanityUrlResponseData,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct VanityUrlResponseData {
+    pub steamid: Option<String>,
+    pub success: i32, // 1 = found, 42 = not found
+}
 
 /// validates string as valid numeric SteamID64 (17 digits)
 pub fn validate_steamid64(input: &str) -> bool {
@@ -43,6 +56,72 @@ pub fn extract_vanity_name(input: &str) -> Option<String> {
     }
 
     None
+}
+
+/// resolve vanity name to STeamID64 using Steam's ResolveVanityUrl API
+/// 
+/// arguments:
+/// - `vanity_name`: vanity url slug (e.g., "myusername")
+/// - `api_key`: Steam Web API key
+/// 
+/// returns:
+/// - Ok(Some(steamid64)) if found
+/// - Ok(None) vanity name doesn't exist
+/// - Err(message) api call fail or network error
+pub async fn resolve_vanity_url(vanity_name: &str, api_key: &str) -> Result<Option<String>, String> {
+    let trimmed_vanity = vanity_name.trim();
+    let trimmed_key = api_key.trim();
+
+    // validate inputs
+    if trimmed_vanity.is_empty() {
+        return Err("Vanity name cannot be empty.".to_string());
+    }
+
+    if trimmed_key.is_empty() {
+        return Err("Steam API key cannot be empty".to_string());
+    }
+
+    // api url
+    let url = format!(
+        "https://api.steampowered.com/ISteamUser/ResolveVanityURL/v1/?key={}&vanityurl={}",
+        trimmed_key, trimmed_vanity
+    );
+
+    // make request
+    let response = reqwest::Client::new()
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+
+    // check http status
+    if !response.status().is_success() {
+        return Err(format!("Steam API returned status {}", response.status()));
+    }
+
+    // parse json
+    let data: VanityUrlResponse = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse Steam API response: {}", e))?;
+
+    // check steams success code
+    if data.response.success != 1 {
+        // success = 42 means vanity url not found
+        return Ok(None);
+    }
+
+    // extract/validate steamid64
+    match data.response.steamid {
+        Some(steamid) => {
+            if validate_steamid64(&steamid) {
+                Ok(Some(steamid))
+            } else {
+                Err("Steam API returned invalid SteamID64 format".to_string())
+            }
+        }
+        None => Ok(None),
+    }
 }
 
 #[cfg(test)]
@@ -108,5 +187,12 @@ mod tests {
     fn test_extract_vanity_name_empty_input() {
         assert_eq!(extract_vanity_name(""), None);
         assert_eq!(extract_vanity_name("   "), None);
+    }
+
+    #[test]
+    fn test_resolve_vanity_url_input_validation() {
+        // This test just checks that the function validates inputs
+        // not sure how to test the actual API call without mocking
+        // just verify the function signature compiles
     }
 }

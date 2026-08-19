@@ -101,35 +101,65 @@ fn validate_steam_settings_input(api_key: &str, steam_id64: &str) -> Result<(), 
 /// - full url: "https://steamcommunity.com/id/myusername"
 /// - numeric: "76561198123456789"
 #[tauri::command]
-fn resolve_steam_id(input: String) -> ResolveSteamIdResult {
+async fn resolve_steam_id(
+    input: String,
+    state: State<'_, AppState>,
+) -> Result<ResolveSteamIdResult, String> {
+    // extract vanity name (or return None if already numeric)
     match vanity::extract_vanity_name(&input) {
-        Some(_vanity_name) => {
-            // for now acknowledge the vanity name
-            // will call steam web api ResolveVanityURL here
-            ResolveSteamIdResult { 
-                success: false, 
-                steam_id64: None, 
-                error: Some(
-                    "Vanity name resolution not implemented. Please enter numeric SteamID64".to_string()
-                ), 
+        Some(vanity_name) => {
+            // get key and drop lock
+            let api_key = {
+                let conn = state.db_conn.lock().map_err(|e| e.to_string())?;
+                db::get_setting(&conn, "steam.api_key")
+                    .map_err(|e| e.to_string())?
+                    .ok_or("Steam API key not configured.")?
+            }; 
+
+            // call the Steam API
+            match vanity::resolve_vanity_url(&vanity_name, &api_key).await {
+                Ok(Some(steamid64)) => {
+                    // Successfully resolved
+                    Ok(ResolveSteamIdResult {
+                        success: true,
+                        steam_id64: Some(steamid64),
+                        error: None,
+                    })
+                }
+                Ok(None) => {
+                    // vanity doesn't exist
+                    Ok(ResolveSteamIdResult {
+                        success: false,
+                        steam_id64: None,
+                        error: Some(
+                            "Steam profile not found. Check the vanity URL and try again.".to_string()
+                        ),
+                    })
+                }
+                Err(api_error) => {
+                    // call failed
+                    Ok(ResolveSteamIdResult {
+                        success: false,
+                        steam_id64: None,
+                        error: Some(format!("Failed to resolve: {}", api_error)),
+                    })
+                }
             }
         }
         None => {
-            // input was numeric SteamID64
+            // input was treated as numeric SteamID64
             if vanity::validate_steamid64(&input) {
-                ResolveSteamIdResult { 
-                    success: true, 
-                    steam_id64: Some(input.trim().to_string()), 
-                    error: None 
-                }
+                Ok(ResolveSteamIdResult {
+                    success: true,
+                    steam_id64: Some(input.trim().to_string()),
+                    error: None,
+                })
             } else {
-                ResolveSteamIdResult { 
-                    success: false, 
-                    steam_id64: None, 
-                    error: Some(
-                        "Invalid SteamID64 format. Must be exactly 17 numeric digits".to_string()
-                    ), 
-                }
+                Ok(ResolveSteamIdResult {
+                    success: false,
+                    steam_id64: None,
+                    error: Some("Invalid SteamID64 format. Must be exactly 17 numeric digits.".to_string()),
+                })
             }
         }
     }
