@@ -1,3 +1,4 @@
+pub mod vanity;
 pub mod scanner;
 pub mod manifest;
 pub mod library;
