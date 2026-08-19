@@ -80,16 +80,10 @@ fn validate_steam_settings_input(api_key: &str, steam_id64: &str) -> Result<(), 
         return Err("Steam API key is required.".to_string());
     }
 
-    if api_key_trimmed.len() < 8 {
-        return Err("Steam API key looks too short".to_string());
-    }
-
-    if steam_id_trimmed.is_empty() {
-        return Err("SteamID64 is required".to_string());
-    }
-
-    if steam_id_trimmed.len() != 17 || !steam_id_trimmed.chars().all(|c| c.is_ascii_digit()) {
-        return Err("SteamID64 must be exactly 17 numeric digits".to_string());
+    if !steam_id_trimmed.is_empty() {
+        if steam_id_trimmed.len() != 17 || !steam_id_trimmed.chars().all(|c| c.is_ascii_digit()) {
+            return Err("SteamID64 must be exactly 17 numeric digits".to_string());
+        }
     }
 
     Ok(())

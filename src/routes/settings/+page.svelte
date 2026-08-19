@@ -15,6 +15,8 @@
   let steamIdTouched = false;
   let submitAttempted = false;
   let helperLoading = false;
+  let autoSavingApiKey = false;
+  let apiKeySaved = false;
 
   type SteamSettings = {
     api_key: string | null;
@@ -37,7 +39,8 @@
   function validateSteamId64(value: string): string | null {
     const v = value.trim();
     if (!v) return "SteamID64 is required.";
-    if(!/^\d{17}$/.test(v)) return "SteamID64 must be exactly 17 numeric digits.";
+    if (!/^\d{17}$/.test(v))
+      return "SteamID64 must be exactly 17 numeric digits.";
     return null;
   }
 
@@ -58,10 +61,35 @@
       const result = await invoke<SteamSettings>("get_steam_settings");
       steamApiKey = result.api_key ?? "";
       steamId64 = result.steam_id64 ?? "";
+
+      if (steamApiKey) {
+        apiKeySaved = true;
+      }
     } catch (error) {
       errorMessage = `Failed to load settings: ${String(error)}`;
     } finally {
       loading = false;
+    }
+  }
+
+  // auto-save api key (for vanity resolve and app requests)
+  async function autoSaveApiKey() {
+    if (apiKeyErrorRaw) {
+      return; // don't save if validation failed
+    }
+
+    autoSavingApiKey = true;
+    try {
+      await invoke("set_steam_settings", {
+        apiKey: steamApiKey,
+        steamId64: steamId64 || "", // use existing or empty
+      });
+      apiKeySaved = true;
+    } catch (error) {
+      errorMessage = `Failed to save API key: ${String(error)}`;
+      apiKeySaved = false;
+    } finally {
+      autoSavingApiKey = false;
     }
   }
 
@@ -70,7 +98,8 @@
     errorMessage = "";
 
     if (apiKeyErrorRaw || steamIdErrorRaw) {
-      errorMessage = apiKeyErrorRaw ?? steamIdErrorRaw ?? "Please fix validation errors.";
+      errorMessage =
+        apiKeyErrorRaw ?? steamIdErrorRaw ?? "Please fix validation errors.";
       return;
     }
 
@@ -78,7 +107,7 @@
     try {
       await invoke("set_steam_settings", {
         apiKey: steamApiKey,
-        steamId64
+        steamId64,
       });
       statusMessage = "Settings saved locally.";
     } catch (error) {
@@ -100,7 +129,7 @@
     helperLoading = true;
     try {
       const result = await invoke<ResolveSteamIdResult>("resolve_steam_id", {
-        input: steamIdHelper
+        input: steamIdHelper,
       });
 
       if (result.success && result.steam_id64) {
@@ -134,22 +163,45 @@
 
   <div class="field">
     <label for="steam-api-key">Steam API Key</label>
-    <input
-      id="steam-api-key"
-      type="password"
-      bind:value={steamApiKey}
-      on:blur={() => (apiKeyTouched = true)}
-      autocomplete="off"
-      spellcheck="false"
-      placeholder="Enter your Steam Web API key"
-      aria-invalid={apiKeyError ? "true" : "false"}
-    />
+    <div class="input-wrapper">
+      <input
+        id="steam-api-key"
+        type="password"
+        bind:value={steamApiKey}
+        onblur={() => {
+          apiKeyTouched = true;
+          if (!apiKeyErrorRaw) {
+            autoSaveApiKey();
+          }
+        }}
+        autocomplete="off"
+        spellcheck="false"
+        placeholder="Enter your Steam Web API key"
+        aria-invalid={apiKeyError ? "true" : "false"}
+      />
+
+      {#if apiKeySaved && !autoSavingApiKey && !apiKeyError}
+        <div class="checkmark-wrapper" title="Successfully saved">
+          <svg
+            class="checkmark"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+        </div>
+      {/if}
+    </div>
     {#if apiKeyError}
       <p class="field-error">{apiKeyErrorRaw}</p>
     {/if}
+    {#if autoSavingApiKey}
+      <p class="field-hint">Saving...</p>
+    {/if}
   </div>
 
-  <!-- SIMPLIFIED: Placeholder explains both input options -->
   <div class="field">
     <label for="steam-id64">SteamID64 Helper</label>
     <div class="helper-row">
@@ -164,7 +216,7 @@
       />
       <button
         class="helper-btn"
-        on:click={resolveVanityId}
+        onclick={resolveVanityId}
         disabled={helperLoading || !steamIdHelper.trim()}
         title="Resolve Steam profile URL to numeric SteamID64"
       >
@@ -179,18 +231,18 @@
       id="steam-id64"
       type="text"
       bind:value={steamId64}
-      on:blur={() => (steamIdTouched = true)}
+      onblur={() => (steamIdTouched = true)}
       autocomplete="off"
       spellcheck="false"
       placeholder="76561198123456789"
       aria-invalid={steamIdError ? "true" : "false"}
     />
-    {#if steamIdError}
+    {#if steamIdError && steamIdTouched}
       <p class="field-error">{steamIdErrorRaw}</p>
     {/if}
   </div>
 
-  <button class="save-btn" on:click={saveSettings} disabled={!canSubmit}>
+  <button class="save-btn" onclick={saveSettings} disabled={!canSubmit}>
     {saving ? "Saving..." : "Save Settings"}
   </button>
 
@@ -236,6 +288,13 @@
     font-size: 0.95rem;
   }
 
+  .input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+  }
+
   input {
     background: #0f1722;
     border: 1px solid #2b3a4d;
@@ -243,6 +302,8 @@
     border-radius: 10px;
     padding: 10px 12px;
     font: inherit;
+    flex: 1;
+    min-width: 0;
   }
 
   input:focus {
@@ -254,6 +315,35 @@
   input:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+
+  .checkmark-wrapper {
+    position: absolute;
+    right: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    color: #34d399;
+    pointer-events: none; /* Don't interfere with input */
+  }
+
+  .checkmark {
+    width: 20px;
+    height: 20px;
+    animation: checkmarkPulse 0.3s ease-out;
+  }
+
+  @keyframes checkmarkPulse {
+    0% {
+      opacity: 0;
+      transform: scale(0.8);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
   }
 
   .helper-row {
