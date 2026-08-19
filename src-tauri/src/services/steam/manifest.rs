@@ -27,7 +27,7 @@ pub struct AppManifest {
     pub name: String,
     pub install_dir: PathBuf,
     pub install_size: u64,
-    pub last_updated: u64,
+    pub last_updated: Option<u64>,
 }
 
 /// reads `appmanifest_*.acf` and parses it
@@ -79,13 +79,12 @@ pub fn parse_app_manifest(
             .and_then(|s| s.parse().ok())
             .unwrap_or(0);
 
-        // parse lastupdated timestamp
+        // parse lastupdated timestamp, None if steam doesn't report one
         let last_updated = app_state
-            .get("lastupdated")
+            .get("LastUpdated")
             .and_then(|vals| vals.first())
             .and_then(|v| v.get_str())
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(0);
+            .and_then(|s| s.parse().ok());
 
         Some(AppManifest {
             app_id,
@@ -112,7 +111,7 @@ mod tests {
 	"name"		"Portal"
 	"installdir"	"Portal"
 	"SizeOnDisk"	"4294967296"
-	"lastupdated"	"1625000000"
+	"LastUpdated"	"1625000000"
 }
 "#;
 
@@ -124,7 +123,7 @@ mod tests {
                 name: "Portal".to_string(),
                 install_dir: PathBuf::from("Portal"),
                 install_size: 4294967296,
-                last_updated: 1625000000,
+                last_updated: Some(1625000000),
             })
         );
     }
@@ -148,7 +147,7 @@ mod tests {
                 name: "Counter-Strike 2".to_string(),
                 install_dir: PathBuf::from("Counter-Strike Global Offensive"),
                 install_size: 0,
-                last_updated: 0,
+                last_updated: None,
             })
         );
     }

@@ -10,7 +10,8 @@ pub struct GameRecord {
     pub normalized_title: String,
     pub install_path: String,
     pub install_size: u64,
-    pub last_updated: u64
+    pub last_updated: Option<u64>,
+    pub synced_at: u64
 }
 
 /// inits sqlite db schema
@@ -26,9 +27,9 @@ pub fn init_db(conn: &Connection) -> Result<()> {
             normalized_title TEXT NOT NULL,
             install_path TEXT NOT NULL,
             install_size INTEGER NOT NULL,
-            last_updated INTEGER NOT NULL,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            last_updated INTEGER,
+            created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+            synced_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
         )", 
         []
     )?;
@@ -50,9 +51,9 @@ pub fn init_db(conn: &Connection) -> Result<()> {
 pub fn upsert_game(conn: &Connection, game: &GameRecord) -> Result<()> {
     conn.execute(
         "INSERT INTO games (
-            id, steam_app_id, title, normalized_title, install_path, install_size, last_updated, updated_at
+            id, steam_app_id, title, normalized_title, install_path, install_size, last_updated, synced_at
         ) VALUES (
-            ?1, ?2, ?3, ?4, ?5, ?6, ?7, CURRENT_TIMESTAMP
+            ?1, ?2, ?3, ?4, ?5, ?6, ?7, strftime('%s','now')
         )
         ON CONFLICT(steam_app_id) DO UPDATE SET
             title = excluded.title,
@@ -60,7 +61,7 @@ pub fn upsert_game(conn: &Connection, game: &GameRecord) -> Result<()> {
             install_path = excluded.install_path,
             install_size = excluded.install_size,
             last_updated = excluded.last_updated,
-            updated_at = CURRENT_TIMESTAMP", 
+            synced_at = strftime('%s','now')", 
         params![
             game.id,
             game.steam_app_id,
@@ -68,7 +69,7 @@ pub fn upsert_game(conn: &Connection, game: &GameRecord) -> Result<()> {
             game.normalized_title,
             game.install_path,
             game.install_size as i64,
-            game.last_updated as i64,
+            game.last_updated.map(|v| v as i64),
         ]
     )?;
 
@@ -79,14 +80,15 @@ pub fn upsert_game(conn: &Connection, game: &GameRecord) -> Result<()> {
 pub fn get_all_games(conn: &Connection) -> Result<Vec<GameRecord>> {
     // get all sql statement
     let mut stmt = conn.prepare(
-        "SELECT id, steam_app_id, title, normalized_title, install_path, install_size, last_updated
+        "SELECT id, steam_app_id, title, normalized_title, install_path, install_size, last_updated, synced_at
              FROM games
              ORDER BY title ASC",
     )?;
 
     let game_iter = stmt.query_map([], |row| {
         let install_size_i64: i64 = row.get(5)?;
-        let last_updated_i64: i64 = row.get(6)?;
+        let last_updated_i64: Option<i64> = row.get(6)?;
+        let synced_at_i64: i64 = row.get(7)?;
 
         Ok(GameRecord {
             id: row.get(0)?,
@@ -95,7 +97,8 @@ pub fn get_all_games(conn: &Connection) -> Result<Vec<GameRecord>> {
             normalized_title: row.get(3)?,
             install_path: row.get(4)?,
             install_size: install_size_i64 as u64,
-            last_updated: last_updated_i64 as u64
+            last_updated: last_updated_i64.map(|v| v as u64),
+            synced_at: synced_at_i64 as u64
         })
     })?;
 
@@ -149,7 +152,8 @@ mod tests {
             normalized_title: "portal".to_string(),
             install_path: "/path/to/Portal".to_string(),
             install_size: 4294967296,
-            last_updated: 1625000000,
+            last_updated: Some(1625000000),
+            synced_at: 0, // ignored on insert/update; db always sets the real value via strftime
         };
 
         // insert Portal
@@ -157,7 +161,14 @@ mod tests {
 
         let games = get_all_games(&conn).unwrap();
         assert_eq!(games.len(), 1);
-        assert_eq!(games[0], portal);
+        assert_eq!(games[0].id, portal.id);
+        assert_eq!(games[0].steam_app_id, portal.steam_app_id);
+        assert_eq!(games[0].title, portal.title);
+        assert_eq!(games[0].normalized_title, portal.normalized_title);
+        assert_eq!(games[0].install_path, portal.install_path);
+        assert_eq!(games[0].install_size, portal.install_size);
+        assert_eq!(games[0].last_updated, portal.last_updated);
+        assert!(games[0].synced_at > 0);
 
         // test upsert (update existing game without error)
         let portal_updated = GameRecord {
@@ -167,7 +178,8 @@ mod tests {
             normalized_title: "portal updated".to_string(),
             install_path: "/new/path/to/Portal".to_string(),
             install_size: 5000000000,
-            last_updated: 1630000000,
+            last_updated: Some(1630000000),
+            synced_at: 0, // ignored on insert/update; db always sets the real value via strftime
         };
 
         upsert_game(&conn, &portal_updated).unwrap();

@@ -9,7 +9,8 @@
     normalized_title: string;
     install_path: string;
     install_size: number;
-    last_updated: number;
+    last_updated: number | null;
+    synced_at: number;
   };
 
   let games = $state<GameRecord[]>([]);
@@ -32,7 +33,7 @@
     return `${size.toFixed(size >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
   };
 
-  const formatDate = (timestamp: number) => {
+  const formatDate = (timestamp: number | null) => {
     if (!timestamp) return "—";
     return new Date(timestamp * 1000).toLocaleDateString();
   };
@@ -45,7 +46,8 @@
       const result = await invoke<GameRecord[]>("scan_steam_games");
       games = result;
     } catch (err) {
-      error = err instanceof Error ? err.message : "Failed to scan Steam library.";
+      error =
+        err instanceof Error ? err.message : "Failed to scan Steam library.";
     } finally {
       hasScanned = true;
       loading = false;
@@ -60,7 +62,8 @@
       const result = await invoke<GameRecord[]>("get_installed_games");
       games = result;
     } catch (err) {
-      error = err instanceof Error ? err.message : "Failed to load installed games.";
+      error =
+        err instanceof Error ? err.message : "Failed to load installed games.";
     } finally {
       loading = false;
     }
@@ -77,7 +80,7 @@
     <p>Scan locally first. Keep everything in one place.</p>
   </div>
 
-  <button class="scan-btn">
+  <button class="scan-btn" onclick={scanLibrary}>
     {loading ? "Scanning..." : "Scan Library"}
   </button>
 </section>
@@ -107,7 +110,7 @@
   <p class="muted">Scanning your Steam folders...</p>
 {/if}
 
-{#if !loading && !hasScanned}
+{#if !loading && !hasScanned && games.length === 0}
   <section class="panel">
     <p>No games scanned yet. Click <strong>Scan Library</strong> to begin.</p>
   </section>
@@ -124,24 +127,29 @@
     <table class="games-table">
       <thead>
         <tr>
-          <th>Game</th>
-          <th>Status</th>
-          <th>App ID</th>
-          <th>Size</th>
-          <th>Last Updated</th>
+          <th class="col-game">Game</th>
+          <th class="col-status">Status</th>
+          <th class="col-numeric">App ID</th>
+          <th class="col-numeric">Size</th>
+          <th class="col-activity">Activity</th>
         </tr>
       </thead>
       <tbody>
         {#each games as game}
           <tr>
-            <td>
-              <div>{game.title}</div>
-              <small>{game.install_path}</small>
+            <td class="col-game">
+              <div class="game-title">{game.title}</div>
+              <small class="game-path" title={game.install_path}
+                >{game.install_path}</small
+              >
             </td>
-            <td>Installed · Local</td>
-            <td>{game.steam_app_id}</td>
-            <td>{formatBytes(game.install_size)}</td>
-            <td>{formatDate(game.last_updated)}</td>
+            <td class="col-status"><span class="badge">installed</span></td>
+            <td class="col-numeric">{game.steam_app_id}</td>
+            <td class="col-numeric">{formatBytes(game.install_size)}</td>
+            <td class="col-activity">
+              <small>updated: {formatDate(game.last_updated)}</small>
+              <small>synced: {formatDate(game.synced_at)}</small>
+            </td>
           </tr>
         {/each}
       </tbody>
@@ -226,6 +234,7 @@
 
   .games-table {
     width: 100%;
+    table-layout: fixed;
     border-collapse: collapse;
   }
 
@@ -233,7 +242,8 @@
   .games-table td {
     text-align: left;
     border-bottom: 1px solid #223041;
-    padding: 10px 8px;
+    padding: 12px 10px;
+    line-height: 1.45;
     vertical-align: top;
   }
 
@@ -242,6 +252,49 @@
     font-size: 0.82rem;
     text-transform: uppercase;
     letter-spacing: 0.08em;
+  }
+
+  .games-table tbody tr:hover {
+    background: #16212e;
+  }
+
+  .col-game {
+    width: 42%;
+  }
+
+  .col-status {
+    width: 14%;
+  }
+
+  .col-numeric {
+    width: 14%;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .col-activity {
+    width: 22%;
+  }
+
+  .game-title {
+    font-weight: 600;
+  }
+
+  .game-path {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: rgba(91, 124, 255, 0.16);
+    color: #93a9ff;
+    font-size: 0.78rem;
+    font-weight: 600;
   }
 
   small {

@@ -74,6 +74,7 @@ pub fn run_steam_scan(conn: &Connection) -> Result<Vec<GameRecord>, String> {
                                     install_path: full_install_path.to_string_lossy().to_string(),
                                     install_size: parsed_manifest.install_size,
                                     last_updated: parsed_manifest.last_updated,
+                                    synced_at: 0, // ignored on insert; db sets the real value via strftime
                                 };
 
                                 // save to sqlite
