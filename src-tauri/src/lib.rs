@@ -4,6 +4,7 @@ use rusqlite::Connection;
 use serde::Serialize;
 use services::db::{self, GameRecord};
 use services::steam::scanner;
+use services::steam::vanity;
 use std::sync::Mutex;
 use tauri::{Manager, State};
 
@@ -17,6 +18,14 @@ pub struct AppState {
 struct SteamSettings {
     api_key: Option<String>,
     steam_id64: Option<String>,
+}
+
+// struct for SteamID result
+#[derive(Debug, Serialize)]
+struct ResolveSteamIdResult {
+    success: bool,
+    steam_id64: Option<String>,
+    error: Option<String>,
 }
 
 /// scans the user's Steam library for installed games and list of game records.
@@ -86,6 +95,46 @@ fn validate_steam_settings_input(api_key: &str, steam_id64: &str) -> Result<(), 
     Ok(())
 }
 
+/// resolve Steam vanity name or URL to SteamID64
+/// inputs can be:
+/// - vanity name: "myusername"
+/// - full url: "https://steamcommunity.com/id/myusername"
+/// - numeric: "76561198123456789"
+#[tauri::command]
+fn resolve_steam_id(input: String) -> ResolveSteamIdResult {
+    match vanity::extract_vanity_name(&input) {
+        Some(_vanity_name) => {
+            // for now acknowledge the vanity name
+            // will call steam web api ResolveVanityURL here
+            ResolveSteamIdResult { 
+                success: false, 
+                steam_id64: None, 
+                error: Some(
+                    "Vanity name resolution not implemented. Please enter numeric SteamID64".to_string()
+                ), 
+            }
+        }
+        None => {
+            // input was numeric SteamID64
+            if vanity::validate_steamid64(&input) {
+                ResolveSteamIdResult { 
+                    success: true, 
+                    steam_id64: Some(input.trim().to_string()), 
+                    error: None 
+                }
+            } else {
+                ResolveSteamIdResult { 
+                    success: false, 
+                    steam_id64: None, 
+                    error: Some(
+                        "Invalid SteamID64 format. Must be exactly 17 numeric digits".to_string()
+                    ), 
+                }
+            }
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -114,7 +163,8 @@ pub fn run() {
             scan_steam_games,
             get_installed_games,
             set_steam_settings,
-            get_steam_settings
+            get_steam_settings,
+            resolve_steam_id
         ])
         .plugin(tauri_plugin_opener::init())
         .run(tauri::generate_context!())

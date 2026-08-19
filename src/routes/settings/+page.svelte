@@ -4,20 +4,27 @@
 
   let steamApiKey = "";
   let steamId64 = "";
+  let steamIdHelper = "";
 
   let loading = false;
   let saving = false;
   let statusMessage = "";
   let errorMessage = "";
 
-  // ux state
   let apiKeyTouched = false;
   let steamIdTouched = false;
   let submitAttempted = false;
+  let helperLoading = false;
 
   type SteamSettings = {
     api_key: string | null;
     steam_id64: string | null;
+  };
+
+  type ResolveSteamIdResult = {
+    success: boolean;
+    steam_id64: string | null;
+    error: string | null;
   };
 
   function validateSteamApiKey(value: string): string | null {
@@ -62,7 +69,6 @@
     statusMessage = "";
     errorMessage = "";
 
-    // frontend guard
     if (apiKeyErrorRaw || steamIdErrorRaw) {
       errorMessage = apiKeyErrorRaw ?? steamIdErrorRaw ?? "Please fix validation errors.";
       return;
@@ -79,6 +85,35 @@
       errorMessage = `Failed to save settings: ${String(error)}`;
     } finally {
       saving = false;
+    }
+  }
+
+  async function resolveVanityId() {
+    errorMessage = "";
+    statusMessage = "";
+
+    if (!steamIdHelper.trim()) {
+      errorMessage = "Please enter a Steam profile URL or SteamID64.";
+      return;
+    }
+
+    helperLoading = true;
+    try {
+      const result = await invoke<ResolveSteamIdResult>("resolve_steam_id", {
+        input: steamIdHelper
+      });
+
+      if (result.success && result.steam_id64) {
+        steamId64 = result.steam_id64;
+        steamIdHelper = "";
+        statusMessage = "SteamID64 resolved successfully!";
+      } else {
+        errorMessage = result.error || "Failed to resolve SteamID64.";
+      }
+    } catch (error) {
+      errorMessage = `Resolution error: ${String(error)}`;
+    } finally {
+      helperLoading = false;
     }
   }
 
@@ -103,6 +138,7 @@
       id="steam-api-key"
       type="password"
       bind:value={steamApiKey}
+      on:blur={() => (apiKeyTouched = true)}
       autocomplete="off"
       spellcheck="false"
       placeholder="Enter your Steam Web API key"
@@ -113,15 +149,40 @@
     {/if}
   </div>
 
+  <!-- SIMPLIFIED: Placeholder explains both input options -->
+  <div class="field">
+    <label for="steam-id64">SteamID64 Helper</label>
+    <div class="helper-row">
+      <input
+        id="steam-id-helper"
+        type="text"
+        bind:value={steamIdHelper}
+        autocomplete="off"
+        spellcheck="false"
+        placeholder="steamcommunity.com/id/username or username"
+        disabled={helperLoading}
+      />
+      <button
+        class="helper-btn"
+        on:click={resolveVanityId}
+        disabled={helperLoading || !steamIdHelper.trim()}
+        title="Resolve Steam profile URL to numeric SteamID64"
+      >
+        {helperLoading ? "Resolving..." : "Resolve"}
+      </button>
+    </div>
+  </div>
+
   <div class="field">
     <label for="steam-id64">SteamID64</label>
     <input
       id="steam-id64"
       type="text"
       bind:value={steamId64}
+      on:blur={() => (steamIdTouched = true)}
       autocomplete="off"
       spellcheck="false"
-      placeholder="7656119..."
+      placeholder="76561198123456789"
       aria-invalid={steamIdError ? "true" : "false"}
     />
     {#if steamIdError}
@@ -165,13 +226,14 @@
 
   .field {
     display: grid;
-    gap: 6px;
-    margin-bottom: 14px;
+    gap: 8px;
+    margin-bottom: 18px;
   }
 
   label {
     color: #cbd5e1;
     font-weight: 600;
+    font-size: 0.95rem;
   }
 
   input {
@@ -189,6 +251,39 @@
     box-shadow: 0 0 0 2px rgba(91, 124, 255, 0.2);
   }
 
+  input:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .helper-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+  }
+
+  .helper-btn {
+    border: none;
+    border-radius: 10px;
+    padding: 10px 16px;
+    background: rgba(91, 124, 255, 0.2);
+    color: #93a9ff;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s ease;
+  }
+
+  .helper-btn:hover:not(:disabled) {
+    background: rgba(91, 124, 255, 0.3);
+  }
+
+  .helper-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
   .save-btn {
     border: none;
     border-radius: 12px;
@@ -197,6 +292,7 @@
     font-weight: 700;
     background: linear-gradient(135deg, #5b7cff, #7c3aed);
     cursor: pointer;
+    margin-top: 8px;
   }
 
   .save-btn:disabled {
@@ -213,12 +309,14 @@
     color: #34d399;
     margin-top: 12px;
     margin-bottom: 0;
+    font-size: 0.95rem;
   }
 
   .error {
     color: #f87171;
     margin-top: 12px;
     margin-bottom: 0;
+    font-size: 0.95rem;
   }
 
   .field-error {
