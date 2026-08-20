@@ -223,6 +223,34 @@ pub fn update_steam_validated_at(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// upserts a batch of owned games (from steam api) by steam_app_id.
+/// - never overwrites install-related fields and set by a local scan
+/// - marks is_owned = 1 and stamps owned_synced_at
+pub fn upsert_owned_games(conn: &Connection, games: &[(u32, String)]) -> Result<()> {
+    // games: vec of steam_app_id, name tuples
+    for (app_id, name) in games {
+        let normalized_title = name.to_lowercase();
+        let id = format!("steam_{}", app_id);
+
+        conn.execute(
+            "INSERT INTO games (
+                id, steam_app_id, title, normalized_title, is_owned, is_installed,
+                install_path, install_size, last_updated, owned_synced_at, synced_at
+            ) VALUES (
+                ?1, ?2, ?3, ?4, 1, 0, NULL, NULL, NULL, strftime('%s','now'), strftime('%s','now')
+            )
+            ON CONFLICT(steam_app_id) DO UPDATE SET
+                title = excluded.title,
+                normalized_title = excluded.normalized_title,
+                is_owned = 1,
+                owned_synced_at = strftime('%s','now')",
+            params![id, app_id, name, normalized_title],
+        )?;
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -386,5 +414,72 @@ mod tests {
         assert_eq!(metadata.last_sync_status, Some("failed".to_string()));
         assert_eq!(metadata.last_sync_at, first_sync_time); // Preserved!
         assert_eq!(metadata.last_sync_error, Some("Network error".to_string()));
+    }
+
+    #[test]
+    fn test_upsert_owned_games_new_owned_only_game() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_db(&conn).unwrap();
+
+        let owned = vec![(400u32, "Portal".to_string())];
+        upsert_owned_games(&conn, &owned).unwrap();
+
+        let games = get_all_games(&conn).unwrap();
+        assert_eq!(games.len(), 1);
+        assert_eq!(games[0].steam_app_id, 400);
+        assert_eq!(games[0].title, "Portal");
+        assert!(games[0].is_owned);
+        assert!(!games[0].is_installed);
+        assert_eq!(games[0].install_path, None);
+        assert_eq!(games[0].install_size, None);
+        assert!(games[0].owned_synced_at.is_some());
+    }
+
+    #[test]
+    fn test_upsert_owned_games_preserves_existing_install_data() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_db(&conn).unwrap();
+
+        // simulate a prior local scan finding Portal installed
+        let scanned = GameRecord {
+            id: "steam_400".to_string(),
+            steam_app_id: 400,
+            title: "Portal".to_string(),
+            normalized_title: "portal".to_string(),
+            is_owned: false,
+            is_installed: true,
+            install_path: Some("/path/to/Portal".to_string()),
+            install_size: Some(4294967296),
+            last_updated: Some(1625000000),
+            owned_synced_at: None,
+            synced_at: 0,
+        };
+        upsert_game(&conn, &scanned).unwrap();
+
+        // now sync ownership for the same steam_app_id
+        let owned = vec![(400u32, "Portal".to_string())];
+        upsert_owned_games(&conn, &owned).unwrap();
+
+        let games = get_all_games(&conn).unwrap();
+        assert_eq!(games.len(), 1); // reconciled into same row, not duplicated
+        assert!(games[0].is_owned); // ownership flag now set
+        assert!(games[0].is_installed); // install flag untouched
+        assert_eq!(games[0].install_path, scanned.install_path); // untouched
+        assert_eq!(games[0].install_size, scanned.install_size); // untouched
+        assert!(games[0].owned_synced_at.is_some());
+    }
+
+    #[test]
+    fn test_upsert_owned_games_resync_keeps_timestamp() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_db(&conn).unwrap();
+
+        let owned = vec![(400u32, "Portal".to_string())];
+        upsert_owned_games(&conn, &owned).unwrap();
+        upsert_owned_games(&conn, &owned).unwrap(); // sync again
+
+        let games = get_all_games(&conn).unwrap();
+        assert_eq!(games.len(), 1); // still one row, no duplicate
+        assert!(games[0].owned_synced_at.is_some());
     }
 }

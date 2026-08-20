@@ -231,7 +231,19 @@ async fn sync_owned_games(state: State<'_, AppState>) -> Result<Vec<owned_games:
     // call steam api
     match owned_games::fetch_owned_games(&steam_id64, &api_key).await {
         Ok(games) => {
+            // map OwnedGame -> (steam_app_id, name) shape db.rs expects,
+            // keeping db.rs decoupled from the Steam API response struct
+            let games_for_db: Vec<(u32, String)> = games
+                .iter()
+                .map(|g| (g.appid, g.name.clone()))
+                .collect();
+
             let conn = state.db_conn.lock().map_err(|e| e.to_string())?;
+
+            // persist ownership before reporting success, so a sync that
+            // "succeeds" always means the data actually made it to sqlite
+            db::upsert_owned_games(&conn, &games_for_db).map_err(|e| e.to_string())?;
+
             db::update_steam_sync_metadata(&conn, "success", None)
                 .map_err(|e| e.to_string())?;
 
@@ -246,6 +258,7 @@ async fn sync_owned_games(state: State<'_, AppState>) -> Result<Vec<owned_games:
         }
     }
 }
+
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
