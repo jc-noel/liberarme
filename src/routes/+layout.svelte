@@ -1,5 +1,4 @@
 <script lang="ts">
-  import ImpeccableLiveRoot from '$lib/impeccable/ImpeccableLiveRoot.svelte?impeccable-live=ac6ea08f';
   import { page } from "$app/stores";
 
   // keep this static for now; later wire true dynamic status from store/state.
@@ -28,10 +27,7 @@
   </aside>
 
   <main class="content">
-    <!-- impeccable-live-svelte-start -->
-<ImpeccableLiveRoot />
-<!-- impeccable-live-svelte-end -->
-<slot />
+    <slot />
   </main>
 </div>
 
