@@ -326,7 +326,14 @@ mod tests {
         let result = resolve_vanity_url_at(&server.url(), "myusername", "fake_key").await;
 
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "Steam API returned status 500");
+        // reqwest's StatusCode Display impl prints both the numeric code
+        // and its canonical reason phrase (e.g. "500 Internal Server Error"),
+        // not just the bare number - match that here (same fix as
+        // owned_games.rs's equivalent test).
+        assert_eq!(
+            result.unwrap_err(),
+            "Steam API returned status 500 Internal Server Error"
+        );
     }
 
     #[tokio::test]
