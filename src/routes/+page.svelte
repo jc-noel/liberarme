@@ -6,10 +6,12 @@
     id: string;
     steam_app_id: number;
     title: string;
-    install_path: string;
-    install_size: number;
+    install_path: string | null;
+    install_size: number | null;
     last_updated: number | null;
     synced_at: number;
+    is_installed: boolean; // ADDED - drives the status badge below
+    is_owned: boolean;     // ADDED - drives the status badge below
   }> = [];
 
   let loading = false;
@@ -24,8 +26,8 @@
     playtime_forever: number;
   };
 
-  function formatBytes(bytes: number): string {
-    if (bytes === 0) return "0 B";
+  function formatBytes(bytes: number | null): string {
+    if (!bytes) return "0 B";
     const k = 1024;
     const sizes = ["B", "KB", "MB", "GB"];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
@@ -35,6 +37,21 @@
   function formatDate(timestamp: number): string {
     if (!timestamp) return "Never";
     return new Date(timestamp * 1000).toLocaleDateString();
+  }
+
+  // Computes a human-readable status label from the two boolean flags
+  // on a game row. Keeping this as a small pure function (rather than
+  // inline ternaries in the markup) makes it easy to unit test later
+  // and easy to extend once Milestone 2 (Classification Engine) adds
+  // real DRM statuses on top of this.
+  function getStatusLabel(game: { is_installed: boolean; is_owned: boolean }): string {
+    if (game.is_installed) {
+      return "Installed";
+    }
+    if (game.is_owned) {
+      return "Owned (not installed)";
+    }
+    return "Unknown";
   }
 
   async function scanLocalLibrary() {
@@ -161,7 +178,7 @@
                 <div class="install-path">{game.install_path}</div>
               </div>
             </td>
-            <td>installed</td>
+            <td>{getStatusLabel(game)}</td>
             <td>{game.steam_app_id}</td>
             <td>{formatBytes(game.install_size)}</td>
             <td>
