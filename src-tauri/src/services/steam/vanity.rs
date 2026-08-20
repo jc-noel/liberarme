@@ -95,7 +95,18 @@ pub async fn resolve_vanity_url(vanity_name: &str, api_key: &str) -> Result<Opti
         .map_err(|e| format!("Network error: {}", e))?;
 
     // check http status
+    // we check for specific status codes here (instead of one generic
+    // error) so the user gets a message that actually tells them what
+    // to do next. this mirrors the same status handling already done
+    // in owned_games.rs::fetch_owned_games, so both Steam API call
+    // sites give the same quality of error message.
     if !response.status().is_success() {
+        if response.status().as_u16() == 401 {
+            return Err("Invalid API key. Check your Steam Web API key".to_string());
+        }
+        if response.status().as_u16() == 403 {
+            return Err("Access denied. Check your Steam privacy settings".to_string());
+        }
         return Err(format!("Steam API returned status {}", response.status()));
     }
 
