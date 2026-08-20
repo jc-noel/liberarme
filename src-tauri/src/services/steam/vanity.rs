@@ -58,17 +58,31 @@ pub fn extract_vanity_name(input: &str) -> Option<String> {
     None
 }
 
-/// resolve vanity name to STeamID64 using Steam's ResolveVanityUrl API
-/// 
+/// resolve vanity name to SteamID64 using Steam's ResolveVanityUrl API
+///
 /// arguments:
 /// - `vanity_name`: vanity url slug (e.g., "myusername")
 /// - `api_key`: Steam Web API key
-/// 
+///
 /// returns:
 /// - Ok(Some(steamid64)) if found
 /// - Ok(None) vanity name doesn't exist
 /// - Err(message) api call fail or network error
 pub async fn resolve_vanity_url(vanity_name: &str, api_key: &str) -> Result<Option<String>, String> {
+    // delegate to the base-url-aware version, pointed at the real Steam API.
+    // splitting it this way means tests can call resolve_vanity_url_at()
+    // with a fake local server url instead of hitting the real internet.
+    resolve_vanity_url_at("https://api.steampowered.com", vanity_name, api_key).await
+}
+
+/// same as resolve_vanity_url, but lets the caller choose which server to
+/// hit. production code should always use resolve_vanity_url() above -
+/// this version only exists so tests can point it at a mock server.
+async fn resolve_vanity_url_at(
+    base_url: &str,
+    vanity_name: &str,
+    api_key: &str,
+) -> Result<Option<String>, String> {
     let trimmed_vanity = vanity_name.trim();
     let trimmed_key = api_key.trim();
 
@@ -83,8 +97,8 @@ pub async fn resolve_vanity_url(vanity_name: &str, api_key: &str) -> Result<Opti
 
     // api url
     let url = format!(
-        "https://api.steampowered.com/ISteamUser/ResolveVanityURL/v1/?key={}&vanityurl={}",
-        trimmed_key, trimmed_vanity
+        "{}/ISteamUser/ResolveVanityURL/v1/?key={}&vanityurl={}",
+        base_url, trimmed_key, trimmed_vanity
     );
 
     // make request
@@ -95,6 +109,11 @@ pub async fn resolve_vanity_url(vanity_name: &str, api_key: &str) -> Result<Opti
         .map_err(|e| format!("Network error: {}", e))?;
 
     // check http status
+    // we check for specific status codes here (instead of one generic
+    // error) so the user gets a message that actually tells them what
+    // to do next. this mirrors the same status handling already done
+    // in owned_games.rs::fetch_owned_games, so both Steam API call
+    // sites give the same quality of error message.
     if !response.status().is_success() {
         if response.status().as_u16() == 401 {
             return Err("Invalid API key. Check your Steam Web API key".to_string());
@@ -195,8 +214,137 @@ mod tests {
         assert_eq!(extract_vanity_name("   "), None);
     }
 
-    #[test]
-    fn test_resolve_vanity_url_input_validation() {
-        // This test just checks that the function validates inputs
+    // --- resolve_vanity_url_at tests below use mockito to fake the Steam API ---
+    // mockito::Server::new_async() spins up a real local HTTP server that only
+    // our test process can see. We tell it exactly what request to expect and
+    // what response to send back, so we can test our error-handling code
+    // without ever calling the real Steam API.
+
+    #[tokio::test]
+    async fn test_resolve_vanity_url_empty_vanity_name_returns_error() {
+        // this hits our own input validation, so it never even makes a
+        // network call - base_url can be nonsense here.
+        let result = resolve_vanity_url_at("http://example.invalid", "", "some_api_key").await;
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Vanity name cannot be empty.");
+    }
+
+    #[tokio::test]
+    async fn test_resolve_vanity_url_empty_api_key_returns_error() {
+        let result = resolve_vanity_url_at("http://example.invalid", "myusername", "").await;
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Steam API key cannot be empty");
+    }
+
+    #[tokio::test]
+    async fn test_resolve_vanity_url_success_returns_steamid() {
+        let mut server = mockito::Server::new_async().await;
+
+        // tell the fake server: when someone GETs this path, respond with
+        // a successful Steam-shaped JSON body.
+        let _mock = server
+            .mock("GET", mockito::Matcher::Regex(r"^/ISteamUser/ResolveVanityURL/v1/.*".to_string()))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"response":{"steamid":"76561198123456789","success":1}}"#)
+            .create_async()
+            .await;
+
+        let result = resolve_vanity_url_at(&server.url(), "myusername", "fake_key").await;
+
+        assert_eq!(result, Ok(Some("76561198123456789".to_string())));
+    }
+
+    #[tokio::test]
+    async fn test_resolve_vanity_url_not_found_returns_none() {
+        let mut server = mockito::Server::new_async().await;
+
+        // success: 42 is Steam's way of saying "no profile with that vanity name"
+        let _mock = server
+            .mock("GET", mockito::Matcher::Regex(r"^/ISteamUser/ResolveVanityURL/v1/.*".to_string()))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"response":{"success":42}}"#)
+            .create_async()
+            .await;
+
+        let result = resolve_vanity_url_at(&server.url(), "no_such_user", "fake_key").await;
+
+        assert_eq!(result, Ok(None));
+    }
+
+    #[tokio::test]
+    async fn test_resolve_vanity_url_401_returns_invalid_key_message() {
+        let mut server = mockito::Server::new_async().await;
+
+        let _mock = server
+            .mock("GET", mockito::Matcher::Regex(r"^/ISteamUser/ResolveVanityURL/v1/.*".to_string()))
+            .with_status(401)
+            .create_async()
+            .await;
+
+        let result = resolve_vanity_url_at(&server.url(), "myusername", "bad_key").await;
+
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            "Invalid API key. Check your Steam Web API key"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_resolve_vanity_url_403_returns_privacy_message() {
+        let mut server = mockito::Server::new_async().await;
+
+        let _mock = server
+            .mock("GET", mockito::Matcher::Regex(r"^/ISteamUser/ResolveVanityURL/v1/.*".to_string()))
+            .with_status(403)
+            .create_async()
+            .await;
+
+        let result = resolve_vanity_url_at(&server.url(), "myusername", "fake_key").await;
+
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            "Access denied. Check your Steam privacy settings"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_resolve_vanity_url_other_error_status_returns_generic_message() {
+        let mut server = mockito::Server::new_async().await;
+
+        // 500 is just a stand-in for "some other error we don't have a
+        // specific message for" - the exact code doesn't matter here.
+        let _mock = server
+            .mock("GET", mockito::Matcher::Regex(r"^/ISteamUser/ResolveVanityURL/v1/.*".to_string()))
+            .with_status(500)
+            .create_async()
+            .await;
+
+        let result = resolve_vanity_url_at(&server.url(), "myusername", "fake_key").await;
+
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Steam API returned status 500");
+    }
+
+    #[tokio::test]
+    async fn test_resolve_vanity_url_bad_json_returns_parse_error() {
+        let mut server = mockito::Server::new_async().await;
+
+        // valid HTTP 200, but the body isn't JSON Steam would ever send us
+        let _mock = server
+            .mock("GET", mockito::Matcher::Regex(r"^/ISteamUser/ResolveVanityURL/v1/.*".to_string()))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body("this is not json")
+            .create_async()
+            .await;
+
+        let result = resolve_vanity_url_at(&server.url(), "myusername", "fake_key").await;
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().starts_with("Failed to parse Steam API response"));
     }
 }
