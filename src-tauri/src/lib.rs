@@ -40,7 +40,7 @@ fn scan_steam_games(state: State<AppState>) -> Result<Vec<GameRecord>, String> {
 #[tauri::command]
 fn get_installed_games(state: State<AppState>) -> Result<Vec<GameRecord>, String> {
     let conn = state.db_conn.lock().map_err(|e| e.to_string())?;
-    db::get_all_games(&conn).map_err(|e| e.to_string())
+    db::get_installed_games_only(&conn).map_err(|e| e.to_string())
 }
 
 /// sets/saves api key and steam id to settings

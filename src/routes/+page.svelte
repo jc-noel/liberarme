@@ -52,7 +52,6 @@
     }
   }
 
-  // ADD THIS FUNCTION - sync owned games from Steam API
   async function syncOwnedGames() {
     syncing = true;
     error = "";

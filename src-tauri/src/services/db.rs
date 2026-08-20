@@ -153,6 +153,47 @@ pub fn get_all_games(conn: &Connection) -> Result<Vec<GameRecord>> {
     Ok(games)
 }
 
+/// all games that are marked as installed, ordered by title
+pub fn get_installed_games_only(conn: &Connection) -> Result<Vec<GameRecord>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, steam_app_id, title, normalized_title, is_owned, is_installed,
+                install_path, install_size, last_updated, owned_synced_at, synced_at
+             FROM games
+             WHERE is_installed = 1
+             ORDER BY title ASC",
+    )?;
+
+    let game_iter = stmt.query_map([], |row| {
+        let is_owned_i64: i64 = row.get(4)?;
+        let is_installed_i64: i64 = row.get(5)?;
+        let install_size_i64: Option<i64> = row.get(7)?;
+        let last_updated_i64: Option<i64> = row.get(8)?;
+        let owned_synced_at_i64: Option<i64> = row.get(9)?;
+        let synced_at_i64: i64 = row.get(10)?;
+
+        Ok(GameRecord {
+            id: row.get(0)?,
+            steam_app_id: row.get(1)?,
+            title: row.get(2)?,
+            normalized_title: row.get(3)?,
+            is_owned: is_owned_i64 != 0,
+            is_installed: is_installed_i64 != 0,
+            install_path: row.get(6)?,
+            install_size: install_size_i64.map(|v| v as u64),
+            last_updated: last_updated_i64.map(|v| v as u64),
+            owned_synced_at: owned_synced_at_i64.map(|v| v as u64),
+            synced_at: synced_at_i64 as u64,
+        })
+    })?;
+
+    let mut games = Vec::new();
+    for game in game_iter {
+        games.push(game?);
+    }
+
+    Ok(games)
+}
+
 /// inserts or updates a setting value by key
 pub fn set_setting(conn: &Connection, key: &str, value: &str) -> Result<()> {
     conn.execute(
@@ -267,7 +308,43 @@ pub fn upsert_owned_games(conn: &Connection, games: &[(u32, String)]) -> Result<
 mod tests {
     use super::*;
 
-        #[test]
+    #[test]
+    fn test_get_installed_games_only_filters_out_owned_only() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_db(&conn).unwrap();
+
+        // insert an installed game
+        let installed = GameRecord {
+            id: "steam_1".to_string(),
+            steam_app_id: 1,
+            title: "Installed Game".to_string(),
+            normalized_title: "installed game".to_string(),
+            is_owned: false,
+            is_installed: true,
+            install_path: Some("/path/to/game".to_string()),
+            install_size: Some(1000),
+            last_updated: Some(1625000000),
+            owned_synced_at: None,
+            synced_at: 0,
+        };
+        upsert_game(&conn, &installed).unwrap();
+
+        // insert an owned-only game (from API sync)
+        let owned_only = vec![(2u32, "Owned Only Game".to_string())];
+        upsert_owned_games(&conn, &owned_only).unwrap();
+
+        // get_installed_games_only should return only the installed one
+        let installed_games = get_installed_games_only(&conn).unwrap();
+        assert_eq!(installed_games.len(), 1);
+        assert_eq!(installed_games[0].steam_app_id, 1);
+        assert!(installed_games[0].is_installed);
+
+        // get_all_games should return both
+        let all_games = get_all_games(&conn).unwrap();
+        assert_eq!(all_games.len(), 2);
+    }
+
+    #[test]
     fn test_local_scan_survives_when_ownership_sync_would_fail() {
         let conn = Connection::open_in_memory().unwrap();
         init_db(&conn).unwrap();
@@ -404,7 +481,7 @@ mod tests {
         }
     }
 
-        #[test]
+    #[test]
     fn test_init_db_migrates_when_schema_version_outdated() {
         let conn = Connection::open_in_memory().unwrap();
 
