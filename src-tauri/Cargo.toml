@@ -28,3 +28,10 @@ reqwest = { version = "0.13.4", features = ["json"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winreg = "0.56"
+
+[dev-dependencies]
+# mockito spins up a fake local HTTP server just for tests, so we can
+# simulate Steam API responses (success, 401, 403, bad JSON, etc.)
+# without ever making a real network call during `cargo test`.
+mockito = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
