@@ -71,10 +71,13 @@ pub fn run_steam_scan(conn: &Connection) -> Result<Vec<GameRecord>, String> {
                                     steam_app_id: parsed_manifest.app_id,
                                     title: parsed_manifest.name.clone(),
                                     normalized_title: parsed_manifest.name.to_lowercase(),
-                                    install_path: full_install_path.to_string_lossy().to_string(),
-                                    install_size: parsed_manifest.install_size,
+                                    is_owned: false,       // this scan path only confirms local install, not Steam ownership
+                                    is_installed: true,    // we found an appmanifest, so it's installed
+                                    install_path: Some(full_install_path.to_string_lossy().to_string()),
+                                    install_size: Some(parsed_manifest.install_size),
                                     last_updated: parsed_manifest.last_updated,
-                                    synced_at: 0, // ignored on insert; db sets the real value via strftime
+                                    owned_synced_at: None, // not touched by this sync path
+                                    synced_at: 0,           // ignored on insert; db sets the real value via strftime
                                 };
 
                                 // save to sqlite

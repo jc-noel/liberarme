@@ -8,39 +8,48 @@ pub struct GameRecord {
     pub steam_app_id: u32,
     pub title: String,
     pub normalized_title: String,
-    pub install_path: String,
-    pub install_size: u64,
+    pub is_owned: bool,
+    pub is_installed: bool,
+    pub install_path: Option<String>,
+    pub install_size: Option<u64>,
     pub last_updated: Option<u64>,
-    pub synced_at: u64
+    pub owned_synced_at: Option<u64>,
+    pub synced_at: u64,
 }
 
 /// steam sync metadata (timestamps & status info)
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SteamSyncMetadata {
-    pub last_validated_at: Option<u64>, // when creds last validated
-    pub last_sync_at: Option<u64>, // last successful owned games sync
+    pub last_validated_at: Option<u64>,   // when creds last validated
+    pub last_sync_at: Option<u64>,        // last successful owned games sync
     pub last_sync_status: Option<String>, // success or failed
-    pub last_sync_error: Option<String>, // error mss if last sync failed
+    pub last_sync_error: Option<String>,  // error mss if last sync failed
 }
 
 /// inits sqlite db schema
 /// creates `games` table if does not exist.
 pub fn init_db(conn: &Connection) -> Result<()> {
-
     // games table
+    // note: install_path/install_size are nullable because a game can be
+    // "owned" (from Steam API sync) without being installed locally.
+    // is_owned / is_installed are explicit flags rather than inferred,
+    // so queries and status logic stay simple and unambiguous.
     conn.execute(
         "CREATE TABLE IF NOT EXISTS games (
             id TEXT PRIMARY KEY,
             steam_app_id INTEGER UNIQUE NOT NULL,
             title TEXT NOT NULL,
             normalized_title TEXT NOT NULL,
-            install_path TEXT NOT NULL,
-            install_size INTEGER NOT NULL,
+            is_owned INTEGER NOT NULL DEFAULT 0,
+            is_installed INTEGER NOT NULL DEFAULT 0,
+            install_path TEXT,
+            install_size INTEGER,
             last_updated INTEGER,
             created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+            owned_synced_at INTEGER,
             synced_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
-        )", 
-        []
+        )",
+        [],
     )?;
 
     // app settings table
@@ -60,26 +69,33 @@ pub fn init_db(conn: &Connection) -> Result<()> {
 pub fn upsert_game(conn: &Connection, game: &GameRecord) -> Result<()> {
     conn.execute(
         "INSERT INTO games (
-            id, steam_app_id, title, normalized_title, install_path, install_size, last_updated, synced_at
+            id, steam_app_id, title, normalized_title, is_owned, is_installed,
+            install_path, install_size, last_updated, owned_synced_at, synced_at
         ) VALUES (
-            ?1, ?2, ?3, ?4, ?5, ?6, ?7, strftime('%s','now')
+            ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, strftime('%s','now')
         )
         ON CONFLICT(steam_app_id) DO UPDATE SET
             title = excluded.title,
             normalized_title = excluded.normalized_title,
+            is_owned = excluded.is_owned,
+            is_installed = excluded.is_installed,
             install_path = excluded.install_path,
             install_size = excluded.install_size,
             last_updated = excluded.last_updated,
-            synced_at = strftime('%s','now')", 
+            owned_synced_at = excluded.owned_synced_at,
+            synced_at = strftime('%s','now')",
         params![
             game.id,
             game.steam_app_id,
             game.title,
             game.normalized_title,
+            game.is_owned,
+            game.is_installed,
             game.install_path,
-            game.install_size as i64,
+            game.install_size.map(|v| v as i64),
             game.last_updated.map(|v| v as i64),
-        ]
+            game.owned_synced_at.map(|v| v as i64),
+        ],
     )?;
 
     Ok(())
@@ -87,27 +103,33 @@ pub fn upsert_game(conn: &Connection, game: &GameRecord) -> Result<()> {
 
 /// Fetch all stored games from db, ordered by title
 pub fn get_all_games(conn: &Connection) -> Result<Vec<GameRecord>> {
-    // get all sql statement
     let mut stmt = conn.prepare(
-        "SELECT id, steam_app_id, title, normalized_title, install_path, install_size, last_updated, synced_at
+        "SELECT id, steam_app_id, title, normalized_title, is_owned, is_installed,
+                install_path, install_size, last_updated, owned_synced_at, synced_at
              FROM games
              ORDER BY title ASC",
     )?;
 
     let game_iter = stmt.query_map([], |row| {
-        let install_size_i64: i64 = row.get(5)?;
-        let last_updated_i64: Option<i64> = row.get(6)?;
-        let synced_at_i64: i64 = row.get(7)?;
+        let is_owned_i64: i64 = row.get(4)?;
+        let is_installed_i64: i64 = row.get(5)?;
+        let install_size_i64: Option<i64> = row.get(7)?;
+        let last_updated_i64: Option<i64> = row.get(8)?;
+        let owned_synced_at_i64: Option<i64> = row.get(9)?;
+        let synced_at_i64: i64 = row.get(10)?;
 
         Ok(GameRecord {
             id: row.get(0)?,
             steam_app_id: row.get(1)?,
             title: row.get(2)?,
             normalized_title: row.get(3)?,
-            install_path: row.get(4)?,
-            install_size: install_size_i64 as u64,
+            is_owned: is_owned_i64 != 0,
+            is_installed: is_installed_i64 != 0,
+            install_path: row.get(6)?,
+            install_size: install_size_i64.map(|v| v as u64),
             last_updated: last_updated_i64.map(|v| v as u64),
-            synced_at: synced_at_i64 as u64
+            owned_synced_at: owned_synced_at_i64.map(|v| v as u64),
+            synced_at: synced_at_i64 as u64,
         })
     })?;
 
@@ -145,28 +167,27 @@ pub fn get_setting(conn: &Connection, key: &str) -> Result<Option<String>> {
 
 /// gets steam sync metadata from settings
 pub fn get_steam_sync_metadata(conn: &Connection) -> Result<SteamSyncMetadata> {
-    let last_validated_at = get_setting(conn, "steam.last_validated_at")?
-        .and_then(|s| s.parse::<u64>().ok());
+    let last_validated_at =
+        get_setting(conn, "steam.last_validated_at")?.and_then(|s| s.parse::<u64>().ok());
 
-    let last_sync_at = get_setting(conn, "steam.last_sync_at")?
-        .and_then(|s| s.parse::<u64>().ok());
+    let last_sync_at = get_setting(conn, "steam.last_sync_at")?.and_then(|s| s.parse::<u64>().ok());
 
     let last_sync_status = get_setting(conn, "steam.last_sync_status")?;
 
     let last_sync_error = get_setting(conn, "steam.last_sync_error")?;
 
-    Ok(SteamSyncMetadata { 
-        last_validated_at, 
-        last_sync_at, 
-        last_sync_status, 
-        last_sync_error 
+    Ok(SteamSyncMetadata {
+        last_validated_at,
+        last_sync_at,
+        last_sync_status,
+        last_sync_error,
     })
 }
 
 /// updates steam sync metadata after validation or sync attempt
 pub fn update_steam_sync_metadata(
     conn: &Connection,
-    status: &str, // success or failed
+    status: &str,        // success or failed
     error: Option<&str>, // error msg if any
 ) -> Result<()> {
     let now = std::time::SystemTime::now()
@@ -202,7 +223,6 @@ pub fn update_steam_validated_at(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -218,9 +238,12 @@ mod tests {
             steam_app_id: 400,
             title: "Portal".to_string(),
             normalized_title: "portal".to_string(),
-            install_path: "/path/to/Portal".to_string(),
-            install_size: 4294967296,
+            is_owned: false,
+            is_installed: true,
+            install_path: Some("/path/to/Portal".to_string()),
+            install_size: Some(4294967296),
             last_updated: Some(1625000000),
+            owned_synced_at: None,
             synced_at: 0, // ignored on insert/update; db always sets the real value via strftime
         };
 
@@ -233,6 +256,7 @@ mod tests {
         assert_eq!(games[0].steam_app_id, portal.steam_app_id);
         assert_eq!(games[0].title, portal.title);
         assert_eq!(games[0].normalized_title, portal.normalized_title);
+        assert_eq!(games[0].is_installed, portal.is_installed);
         assert_eq!(games[0].install_path, portal.install_path);
         assert_eq!(games[0].install_size, portal.install_size);
         assert_eq!(games[0].last_updated, portal.last_updated);
@@ -244,9 +268,12 @@ mod tests {
             steam_app_id: 400,
             title: "Portal (Updated)".to_string(),
             normalized_title: "portal updated".to_string(),
-            install_path: "/new/path/to/Portal".to_string(),
-            install_size: 5000000000,
+            is_owned: false,
+            is_installed: true,
+            install_path: Some("/new/path/to/Portal".to_string()),
+            install_size: Some(5000000000),
             last_updated: Some(1630000000),
+            owned_synced_at: None,
             synced_at: 0, // ignored on insert/update; db always sets the real value via strftime
         };
 
@@ -255,7 +282,7 @@ mod tests {
         let updated_games = get_all_games(&conn).unwrap();
         assert_eq!(updated_games.len(), 1); // Still 1 record
         assert_eq!(updated_games[0].title, "Portal (Updated)");
-        assert_eq!(updated_games[0].install_size, 5000000000);
+        assert_eq!(updated_games[0].install_size, Some(5000000000));
     }
 
     #[test]
@@ -290,7 +317,7 @@ mod tests {
         assert_eq!(value, None);
     }
 
-        #[test]
+    #[test]
     fn test_get_steam_sync_metadata_empty() {
         let conn = Connection::open_in_memory().unwrap();
         init_db(&conn).unwrap();
@@ -355,7 +382,7 @@ mod tests {
         // Second: failed sync (should keep first sync time)
         update_steam_sync_metadata(&conn, "failed", Some("Network error")).unwrap();
         let metadata = get_steam_sync_metadata(&conn).unwrap();
-        
+
         assert_eq!(metadata.last_sync_status, Some("failed".to_string()));
         assert_eq!(metadata.last_sync_at, first_sync_time); // Preserved!
         assert_eq!(metadata.last_sync_error, Some("Network error".to_string()));
