@@ -80,7 +80,7 @@
     <p>Scan locally first. Keep everything in one place.</p>
   </div>
 
-  <button class="scan-btn" onclick={scanLibrary}>
+  <button class="scan-btn" onclick={scanLibrary} disabled={loading}>
     {loading ? "Scanning..." : "Scan Library"}
   </button>
 </section>
@@ -103,11 +103,11 @@
 </section>
 
 {#if error}
-  <p class="error">{error}</p>
+  <p class="error" role="alert">{error}</p>
 {/if}
 
 {#if loading}
-  <p class="muted">Scanning your Steam folders...</p>
+  <p class="muted" aria-live="polite">Scanning your Steam folders...</p>
 {/if}
 
 {#if !loading && !hasScanned && games.length === 0}
@@ -127,15 +127,15 @@
     <table class="games-table">
       <thead>
         <tr>
-          <th class="col-game">Game</th>
-          <th class="col-status">Status</th>
-          <th class="col-numeric">App ID</th>
-          <th class="col-numeric">Size</th>
-          <th class="col-activity">Activity</th>
+          <th class="col-game" scope="col">Game</th>
+          <th class="col-status" scope="col">Status</th>
+          <th class="col-numeric" scope="col">App ID</th>
+          <th class="col-numeric" scope="col">Size</th>
+          <th class="col-activity" scope="col">Activity</th>
         </tr>
       </thead>
       <tbody>
-        {#each games as game}
+        {#each games as game (game.id)}
           <tr>
             <td class="col-game">
               <div class="game-title">{game.title}</div>
@@ -173,7 +173,7 @@
 
   .page-header p {
     margin: 6px 0 0;
-    color: #94a3b8;
+    color: var(--slate-ash);
     font-size: 1.05rem;
   }
 
@@ -181,10 +181,15 @@
     border: none;
     border-radius: 14px;
     padding: 11px 18px;
-    color: #fff;
+    color: var(--on-accent);
     font-weight: 700;
-    background: linear-gradient(135deg, #5b7cff, #7c3aed);
+    background: linear-gradient(135deg, var(--case-file-indigo), var(--case-file-violet));
     cursor: pointer;
+  }
+
+  .scan-btn:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
   }
 
   .stats-grid {
@@ -195,10 +200,10 @@
   }
 
   .stat-card {
-    border: 1px solid #243244;
+    border: 1px solid var(--border-line);
     border-radius: 14px;
     padding: 12px 14px;
-    background: #111a25;
+    background: var(--archive-card);
   }
 
   .stat-card h2 {
@@ -206,7 +211,7 @@
     font-size: 0.82rem;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    color: #94a3b8;
+    color: var(--slate-ash);
   }
 
   .stat-card p {
@@ -216,24 +221,26 @@
   }
 
   .panel {
-    border: 1px dashed #2a3b4f;
+    border: 1px dashed var(--border-dashed);
     border-radius: 14px;
     padding: 16px;
-    background: #111a25;
-    color: #cbd5e1;
+    background: var(--archive-card);
+    color: var(--slate-ash-bright);
+    overflow-x: auto;
   }
 
   .muted {
-    color: #94a3b8;
+    color: var(--slate-ash);
   }
 
   .error {
-    color: #f87171;
+    color: var(--danger);
     font-weight: 600;
   }
 
   .games-table {
     width: 100%;
+    min-width: 640px;
     table-layout: fixed;
     border-collapse: collapse;
   }
@@ -241,21 +248,21 @@
   .games-table th,
   .games-table td {
     text-align: left;
-    border-bottom: 1px solid #223041;
+    border-bottom: 1px solid var(--table-line);
     padding: 12px 10px;
     line-height: 1.45;
     vertical-align: top;
   }
 
   .games-table thead th {
-    color: #94a3b8;
+    color: var(--slate-ash);
     font-size: 0.82rem;
     text-transform: uppercase;
     letter-spacing: 0.08em;
   }
 
   .games-table tbody tr:hover {
-    background: #16212e;
+    background: var(--row-hover);
   }
 
   .col-game {
@@ -291,15 +298,30 @@
     display: inline-block;
     padding: 3px 10px;
     border-radius: 999px;
-    background: rgba(91, 124, 255, 0.16);
-    color: #93a9ff;
+    background: rgba(var(--case-file-indigo-rgb), 0.16);
+    color: var(--accent-text-soft);
     font-size: 0.78rem;
     font-weight: 600;
   }
 
   small {
-    color: #94a3b8;
+    color: var(--slate-ash);
     display: block;
     margin-top: 2px;
+  }
+
+  @media (max-width: 640px) {
+    .page-header {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    .scan-btn {
+      width: 100%;
+    }
+
+    .stats-grid {
+      grid-template-columns: 1fr;
+    }
   }
 </style>

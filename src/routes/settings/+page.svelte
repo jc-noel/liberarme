@@ -162,12 +162,16 @@
   {/if}
 
   <div class="field">
-    <label for="steam-api-key">Steam API Key</label>
+    <label for="steam-api-key">Steam API Key <span class="required-marker">Required</span></label>
+    <p class="field-hint">Used to fetch your library from Steam's Web API.</p>
     <div class="input-wrapper">
       <input
         id="steam-api-key"
         type="password"
         bind:value={steamApiKey}
+        oninput={() => {
+          apiKeySaved = false;
+        }}
         onblur={() => {
           apiKeyTouched = true;
           if (!apiKeyErrorRaw) {
@@ -178,6 +182,8 @@
         spellcheck="false"
         placeholder="Enter your Steam Web API key"
         aria-invalid={apiKeyError ? "true" : "false"}
+        aria-describedby={apiKeyError ? "steam-api-key-error" : undefined}
+        aria-required="true"
       />
 
       {#if apiKeySaved && !autoSavingApiKey && !apiKeyError}
@@ -188,6 +194,7 @@
             fill="none"
             stroke="currentColor"
             stroke-width="2"
+            aria-hidden="true"
           >
             <polyline points="20 6 9 17 4 12"></polyline>
           </svg>
@@ -195,7 +202,7 @@
       {/if}
     </div>
     {#if apiKeyError}
-      <p class="field-error">{apiKeyErrorRaw}</p>
+      <p class="field-error" id="steam-api-key-error">{apiKeyErrorRaw}</p>
     {/if}
     {#if autoSavingApiKey}
       <p class="field-hint">Saving...</p>
@@ -203,7 +210,7 @@
   </div>
 
   <div class="field">
-    <label for="steam-id64">SteamID64 Helper</label>
+    <label for="steam-id-helper">SteamID64 Helper</label>
     <div class="helper-row">
       <input
         id="steam-id-helper"
@@ -226,7 +233,8 @@
   </div>
 
   <div class="field">
-    <label for="steam-id64">SteamID64</label>
+    <label for="steam-id64">SteamID64 <span class="required-marker">Required</span></label>
+    <p class="field-hint">Must be exactly 17 numeric digits.</p>
     <input
       id="steam-id64"
       type="text"
@@ -236,9 +244,11 @@
       spellcheck="false"
       placeholder="76561198123456789"
       aria-invalid={steamIdError ? "true" : "false"}
+      aria-describedby={steamIdError && steamIdTouched ? "steam-id64-error" : undefined}
+      aria-required="true"
     />
     {#if steamIdError && steamIdTouched}
-      <p class="field-error">{steamIdErrorRaw}</p>
+      <p class="field-error" id="steam-id64-error">{steamIdErrorRaw}</p>
     {/if}
   </div>
 
@@ -247,11 +257,11 @@
   </button>
 
   {#if statusMessage}
-    <p class="success">{statusMessage}</p>
+    <p class="success" role="status">{statusMessage}</p>
   {/if}
 
   {#if errorMessage}
-    <p class="error">{errorMessage}</p>
+    <p class="error" role="alert">{errorMessage}</p>
   {/if}
 </section>
 
@@ -263,17 +273,17 @@
 
   .page-header p {
     margin: 6px 0 0;
-    color: #94a3b8;
+    color: var(--slate-ash);
     font-size: 1.05rem;
   }
 
   .form-card {
     margin-top: 18px;
     max-width: 620px;
-    border: 1px solid #243244;
+    border: 1px solid var(--border-line);
     border-radius: 14px;
     padding: 16px;
-    background: #111a25;
+    background: var(--archive-card);
   }
 
   .field {
@@ -283,9 +293,18 @@
   }
 
   label {
-    color: #cbd5e1;
+    color: var(--slate-ash-bright);
     font-weight: 600;
     font-size: 0.95rem;
+  }
+
+  .required-marker {
+    margin-left: 6px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--slate-ash);
   }
 
   .input-wrapper {
@@ -296,9 +315,9 @@
   }
 
   input {
-    background: #0f1722;
-    border: 1px solid #2b3a4d;
-    color: #e5e7eb;
+    background: var(--archive-well);
+    border: 1px solid var(--border-line-soft);
+    color: var(--paper-white);
     border-radius: 10px;
     padding: 10px 12px;
     font: inherit;
@@ -308,8 +327,8 @@
 
   input:focus {
     outline: none;
-    border-color: #5b7cff;
-    box-shadow: 0 0 0 2px rgba(91, 124, 255, 0.2);
+    border-color: var(--case-file-indigo);
+    box-shadow: 0 0 0 2px rgba(var(--case-file-indigo-rgb), 0.2);
   }
 
   input:disabled {
@@ -325,7 +344,7 @@
     justify-content: center;
     width: 20px;
     height: 20px;
-    color: #34d399;
+    color: var(--success);
     pointer-events: none; /* Don't interfere with input */
   }
 
@@ -346,6 +365,12 @@
     }
   }
 
+  @media (prefers-reduced-motion: reduce) {
+    .checkmark {
+      animation: none;
+    }
+  }
+
   .helper-row {
     display: grid;
     grid-template-columns: 1fr auto;
@@ -356,8 +381,8 @@
     border: none;
     border-radius: 10px;
     padding: 10px 16px;
-    background: rgba(91, 124, 255, 0.2);
-    color: #93a9ff;
+    background: rgba(var(--case-file-indigo-rgb), 0.2);
+    color: var(--accent-text-soft);
     font-weight: 600;
     font-size: 0.9rem;
     cursor: pointer;
@@ -366,7 +391,7 @@
   }
 
   .helper-btn:hover:not(:disabled) {
-    background: rgba(91, 124, 255, 0.3);
+    background: rgba(var(--case-file-indigo-rgb), 0.3);
   }
 
   .helper-btn:disabled {
@@ -378,9 +403,9 @@
     border: none;
     border-radius: 12px;
     padding: 10px 14px;
-    color: #fff;
+    color: var(--on-accent);
     font-weight: 700;
-    background: linear-gradient(135deg, #5b7cff, #7c3aed);
+    background: linear-gradient(135deg, var(--case-file-indigo), var(--case-file-violet));
     cursor: pointer;
     margin-top: 8px;
   }
@@ -391,19 +416,19 @@
   }
 
   .muted {
-    color: #94a3b8;
+    color: var(--slate-ash);
     margin-top: 0;
   }
 
   .success {
-    color: #34d399;
+    color: var(--success);
     margin-top: 12px;
     margin-bottom: 0;
     font-size: 0.95rem;
   }
 
   .error {
-    color: #f87171;
+    color: var(--danger);
     margin-top: 12px;
     margin-bottom: 0;
     font-size: 0.95rem;
@@ -411,11 +436,23 @@
 
   .field-error {
     margin: 0;
-    color: #fca5a5;
+    color: var(--danger-soft);
     font-size: 0.9rem;
   }
 
+  .field-hint {
+    margin: 0;
+    color: var(--slate-ash);
+    font-size: 0.85rem;
+  }
+
   input[aria-invalid="true"] {
-    border-color: #f87171;
+    border-color: var(--danger);
+  }
+
+  @media (max-width: 480px) {
+    .helper-row {
+      grid-template-columns: 1fr;
+    }
   }
 </style>
