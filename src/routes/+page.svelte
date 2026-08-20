@@ -1,6 +1,7 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
+  import { toUserMessage } from "$lib/errors";
 
   type GameRecord = {
     id: string;
@@ -46,8 +47,10 @@
       const result = await invoke<GameRecord[]>("scan_steam_games");
       games = result;
     } catch (err) {
-      error =
-        err instanceof Error ? err.message : "Failed to scan Steam library.";
+      error = toUserMessage(
+        err,
+        "Couldn't scan your Steam library. Check your connection and try again.",
+      );
     } finally {
       hasScanned = true;
       loading = false;
@@ -62,8 +65,10 @@
       const result = await invoke<GameRecord[]>("get_installed_games");
       games = result;
     } catch (err) {
-      error =
-        err instanceof Error ? err.message : "Failed to load installed games.";
+      error = toUserMessage(
+        err,
+        "Couldn't load your installed games. Check your connection and try again.",
+      );
     } finally {
       loading = false;
     }
@@ -183,7 +188,7 @@
     padding: 11px 18px;
     color: var(--on-accent);
     font-weight: 700;
-    background: linear-gradient(135deg, var(--case-file-indigo), var(--case-file-violet));
+    background: linear-gradient(135deg, var(--case-file-indigo-deep), var(--case-file-violet));
     cursor: pointer;
   }
 

@@ -1,6 +1,17 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
+  import { openUrl } from "@tauri-apps/plugin-opener";
+  import { toUserMessage } from "$lib/errors";
+
+  const STEAM_API_KEY_URL = "https://steamcommunity.com/dev/apikey";
+
+  function openSteamApiKeyPage(event: MouseEvent) {
+    event.preventDefault();
+    openUrl(STEAM_API_KEY_URL).catch(() => {
+      window.open(STEAM_API_KEY_URL, "_blank", "noopener,noreferrer");
+    });
+  }
 
   let steamApiKey = "";
   let steamId64 = "";
@@ -66,7 +77,10 @@
         apiKeySaved = true;
       }
     } catch (error) {
-      errorMessage = `Failed to load settings: ${String(error)}`;
+      errorMessage = toUserMessage(
+        error,
+        "Couldn't load your saved settings. Try reopening Settings.",
+      );
     } finally {
       loading = false;
     }
@@ -86,7 +100,10 @@
       });
       apiKeySaved = true;
     } catch (error) {
-      errorMessage = `Failed to save API key: ${String(error)}`;
+      errorMessage = toUserMessage(
+        error,
+        "Couldn't save your API key. Check your connection and try again.",
+      );
       apiKeySaved = false;
     } finally {
       autoSavingApiKey = false;
@@ -111,7 +128,10 @@
       });
       statusMessage = "Settings saved locally.";
     } catch (error) {
-      errorMessage = `Failed to save settings: ${String(error)}`;
+      errorMessage = toUserMessage(
+        error,
+        "Couldn't save your settings. Check your connection and try again.",
+      );
     } finally {
       saving = false;
     }
@@ -140,7 +160,10 @@
         errorMessage = result.error || "Failed to resolve SteamID64.";
       }
     } catch (error) {
-      errorMessage = `Resolution error: ${String(error)}`;
+      errorMessage = toUserMessage(
+        error,
+        "Couldn't resolve that profile. Double-check the URL or username and try again.",
+      );
     } finally {
       helperLoading = false;
     }
@@ -163,7 +186,10 @@
 
   <div class="field">
     <label for="steam-api-key">Steam API Key <span class="required-marker">Required</span></label>
-    <p class="field-hint">Used to fetch your library from Steam's Web API.</p>
+    <p class="field-hint">
+      Used to fetch your library from Steam's Web API. <br/>
+      <a class="inline-link" href={STEAM_API_KEY_URL} onclick={openSteamApiKeyPage}>Get your key from Steam →</a>
+    </p>
     <div class="input-wrapper">
       <input
         id="steam-api-key"
@@ -211,6 +237,7 @@
 
   <div class="field">
     <label for="steam-id-helper">SteamID64 Helper</label>
+    <p class="field-hint">Paste your Steam profile URL or username below to resolve SteamID64.</p>
     <div class="helper-row">
       <input
         id="steam-id-helper"
@@ -234,7 +261,7 @@
 
   <div class="field">
     <label for="steam-id64">SteamID64 <span class="required-marker">Required</span></label>
-    <p class="field-hint">Must be exactly 17 numeric digits.</p>
+    <p class="field-hint">Must be exactly 17 numeric digits. Use the helper above if you only know your profile URL.</p>
     <input
       id="steam-id64"
       type="text"
@@ -405,7 +432,7 @@
     padding: 10px 14px;
     color: var(--on-accent);
     font-weight: 700;
-    background: linear-gradient(135deg, var(--case-file-indigo), var(--case-file-violet));
+    background: linear-gradient(135deg, var(--case-file-indigo-deep), var(--case-file-violet));
     cursor: pointer;
     margin-top: 8px;
   }
@@ -444,6 +471,16 @@
     margin: 0;
     color: var(--slate-ash);
     font-size: 0.85rem;
+  }
+
+  .inline-link {
+    color: var(--accent-text-soft);
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  .inline-link:hover {
+    text-decoration: underline;
   }
 
   input[aria-invalid="true"] {

@@ -7,6 +7,7 @@ colors:
   archive-card: "#111a25"
   archive-well: "#0f1722"
   case-file-indigo: "#5b7cff"
+  case-file-indigo-deep: "#3f5fd9"
   case-file-violet: "#7c3aed"
   paper-white: "#e5e7eb"
   slate-ash: "#94a3b8"
@@ -82,7 +83,7 @@ spacing:
   xl: "28px"
 components:
   button-primary:
-    backgroundColor: "linear-gradient(135deg, {colors.case-file-indigo}, {colors.case-file-violet})"
+    backgroundColor: "linear-gradient(135deg, {colors.case-file-indigo-deep}, {colors.case-file-violet})"
     textColor: "{colors.pure-white}"
     rounded: "{rounded.lg}"
     padding: "11px 18px"
@@ -124,7 +125,8 @@ The one deliberate accent — a narrow indigo-to-violet gradient — is reserved
 Near-black neutrals dominate; a single indigo-to-violet gradient is the only saturated color in the system, and it's rationed. Every color below is a CSS custom property defined once (`src/routes/+layout.svelte`'s `:global(:root)` block) and consumed via `var(--token-name)` everywhere else in the app — no component re-declares a literal hex.
 
 ### Primary
-- **Case File Indigo** (`#5b7cff`): the gradient's cool end. Used as the solid accent for input focus borders, badge/pill text, and ghost-button text/background (at low opacity). This is the color to reach for when something needs to read as "linked to the accent" without the full gradient.
+- **Case File Indigo** (`#5b7cff`): the solid accent for input focus borders, badge/pill text, and ghost-button text/background (at low opacity) — never a full-opacity background, so its own contrast against white text is not load-bearing here. This is the color to reach for when something needs to read as "linked to the accent" without the full gradient.
+- **Case File Indigo, Deep** (`#3f5fd9`): the gradient's cool end wherever the gradient carries text (the brand mark, both primary buttons). Deeper than Case File Indigo specifically so white text clears 4.5:1 WCAG AA contrast against it; never used outside the gradient.
 - **Case File Indigo, Soft** (`#93a9ff`): a lighter tint of Case File Indigo, reserved specifically for text sitting on a low-opacity indigo fill — ghost-button labels and the "installed" badge. Never used as a background or border.
 - **Case File Violet** (`#7c3aed`): the gradient's warm end. Appears only as the second stop of `button-primary` and the brand mark — never alone.
 
@@ -196,7 +198,7 @@ Rounding scales with a component's weight: 10px for inputs, nav links, and the g
 
 ### Buttons
 - **Shape:** 14px radius for primary actions (Scan Library), 12px for the settings Save button, 10px for the ghost/helper button.
-- **Primary:** white text on the reserved `linear-gradient(135deg, case-file-indigo, case-file-violet)`, bold weight, no border, 11px 18px padding.
+- **Primary:** white text on the reserved `linear-gradient(135deg, case-file-indigo-deep, case-file-violet)`, bold weight, no border, 11px 18px padding. The gradient's first stop is deliberately deeper than `case-file-indigo` so white text clears 4.5:1 contrast against both stops.
 - **Ghost/Helper:** `rgba(91, 124, 255, 0.2)` background, `#93a9ff` text, no border, 10px 16px padding; hover raises the fill to `rgba(91, 124, 255, 0.3)`.
 - **Disabled:** 0.6–0.7 opacity, `cursor: not-allowed`, no other treatment change.
 

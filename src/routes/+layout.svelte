@@ -43,6 +43,7 @@
     --archive-well: #0f1722;
     --case-file-indigo: #5b7cff;
     --case-file-indigo-rgb: 91, 124, 255;
+    --case-file-indigo-deep: #3f5fd9;
     --case-file-violet: #7c3aed;
     --paper-white: #e5e7eb;
     --slate-ash: #94a3b8;
@@ -123,7 +124,8 @@
     width: 40px;
     height: 40px;
     border-radius: 12px;
-    background: linear-gradient(135deg, var(--case-file-indigo), var(--case-file-violet));
+    background: linear-gradient(135deg, var(--case-file-indigo-deep), var(--case-file-violet));
+    color: var(--on-accent);
     display: grid;
     place-items: center;
     font-weight: 700;
