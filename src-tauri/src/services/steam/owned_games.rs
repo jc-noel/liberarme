@@ -13,7 +13,10 @@ pub struct GetOwnedGamesData {
 }
 
 /// represents a single game from GetOwnedGames response
-#[derive(Debug, Clone, Serialize, Deserialize)]
+// PartialEq is added here so tests can compare two OwnedGame values
+// (or Vecs of them) directly with assert_eq!, e.g. comparing a full
+// games list returned from a mocked API call against what we expect.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct OwnedGame {
     pub appid: u32,
     pub name: String,
@@ -180,6 +183,8 @@ mod tests {
 
         let result = fetch_owned_games_at(&server.url(), "76561198123456789", "fake_key").await;
 
+        // now that OwnedGame derives PartialEq, we can compare the whole
+        // Result<Vec<OwnedGame>, String> directly against an empty Ok Vec.
         assert_eq!(result, Ok(Vec::new()));
     }
 
