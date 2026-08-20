@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-20T00:00:00.000Z",
+  "title": "Design System: Liberarme",
+  "extensions": {
+    "colorMeta": {
+      "case-file-indigo": { "role": "primary", "displayName": "Case File Indigo", "canonical": "#5b7cff" },
+      "case-file-violet": { "role": "primary", "displayName": "Case File Violet", "canonical": "#7c3aed" },
+      "archive-bg": { "role": "neutral", "displayName": "Deep Archive", "canonical": "#0b1118" },
+      "archive-raised": { "role": "neutral", "displayName": "Deep Archive, Raised", "canonical": "#0d141c" },
+      "archive-card": { "role": "neutral", "displayName": "Deep Archive, Card", "canonical": "#111a25" },
+      "archive-well": { "role": "neutral", "displayName": "Deep Archive, Well", "canonical": "#0f1722" },
+      "paper-white": { "role": "neutral", "displayName": "Paper White", "canonical": "#e5e7eb" },
+      "slate-ash-bright": { "role": "neutral", "displayName": "Slate Ash, Bright", "canonical": "#cbd5e1" },
+      "slate-ash": { "role": "neutral", "displayName": "Slate Ash", "canonical": "#94a3b8" },
+      "border-hairline": { "role": "neutral", "displayName": "Border Hairline", "canonical": "#1f2937" },
+      "border-line": { "role": "neutral", "displayName": "Border Line", "canonical": "#243244" },
+      "border-line-soft": { "role": "neutral", "displayName": "Border Line, Soft", "canonical": "#2b3a4d" },
+      "border-dashed": { "role": "neutral", "displayName": "Border, Dashed", "canonical": "#2a3b4f" },
+      "table-line": { "role": "neutral", "displayName": "Table Line", "canonical": "#223041" },
+      "row-hover": { "role": "neutral", "displayName": "Row Hover", "canonical": "#16212e" },
+      "nav-hover": { "role": "neutral", "displayName": "Nav Hover", "canonical": "#182230" },
+      "nav-active": { "role": "neutral", "displayName": "Nav Active", "canonical": "#1b2736" },
+      "success": { "role": "semantic", "displayName": "Success", "canonical": "#34d399" },
+      "danger": { "role": "semantic", "displayName": "Danger", "canonical": "#f87171" },
+      "danger-soft": { "role": "semantic", "displayName": "Danger, Soft", "canonical": "#fca5a5" }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Page titles (Library, Settings) and the 1.8rem sidebar brand name." },
+      "title": { "displayName": "Title", "purpose": "Stat-tile values." },
+      "body": { "displayName": "Body", "purpose": "Running text, subtitles, table cells." },
+      "label": { "displayName": "Label", "purpose": "Uppercase small-caps metadata: stat headings, table headers, status heading." }
+    },
+    "shadows": [
+      { "name": "focus-ring", "value": "0 0 0 2px rgba(91, 124, 255, 0.2)", "purpose": "The system's only shadow: marks input focus, paired with a border-color shift to Case File Indigo." }
+    ],
+    "motion": [
+      { "name": "checkmark-pulse", "value": "checkmarkPulse 0.3s ease-out (opacity 0->1, scale 0.8->1)", "purpose": "Inline confirmation that a field auto-saved." },
+      { "name": "hover-fill", "value": "background-color 0.15s ease", "purpose": "Nav links and the ghost/helper button hover-fill transition." }
+    ],
+    "breakpoints": []
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The single reserved gradient action per screen (e.g. Scan Library).",
+      "html": "<button class=\"ds-btn-primary\">Scan Library</button>",
+      "css": ".ds-btn-primary { border: none; border-radius: 14px; padding: 11px 18px; color: #fff; font-weight: 700; background: linear-gradient(135deg, #5b7cff, #7c3aed); cursor: pointer; }"
+    },
+    {
+      "name": "Ghost/Helper Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Secondary action (e.g. Resolve SteamID64) using a translucent indigo fill instead of the full gradient.",
+      "html": "<button class=\"ds-btn-ghost\">Resolve</button>",
+      "css": ".ds-btn-ghost { border: none; border-radius: 10px; padding: 10px 16px; background: rgba(91, 124, 255, 0.2); color: #93a9ff; font-weight: 600; font-size: 0.9rem; transition: background 0.15s ease; } .ds-btn-ghost:hover { background: rgba(91, 124, 255, 0.3); }"
+    },
+    {
+      "name": "Stat Tile / Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Bordered card used for stat tiles, panels, and the settings form.",
+      "html": "<article class=\"ds-card\"><h2>Games</h2><p>128</p></article>",
+      "css": ".ds-card { border: 1px solid #243244; border-radius: 14px; padding: 12px 14px; background: #111a25; } .ds-card h2 { margin: 0 0 4px; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.08em; color: #94a3b8; } .ds-card p { margin: 0; font-size: 1.25rem; font-weight: 700; }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Form field with sunken background and reserved-accent focus ring.",
+      "html": "<input type=\"text\" placeholder=\"Enter value\" />",
+      "css": ".ds-input { background: #0f1722; border: 1px solid #2b3a4d; color: #e5e7eb; border-radius: 10px; padding: 10px 12px; } .ds-input:focus { outline: none; border-color: #5b7cff; box-shadow: 0 0 0 2px rgba(91, 124, 255, 0.2); }"
+    },
+    {
+      "name": "Status Badge",
+      "kind": "chip",
+      "refersTo": "badge",
+      "description": "Pill badge for row status (e.g. \"installed\").",
+      "html": "<span class=\"ds-badge\">installed</span>",
+      "css": ".ds-badge { display: inline-block; padding: 3px 10px; border-radius: 999px; background: rgba(91, 124, 255, 0.16); color: #93a9ff; font-size: 0.78rem; font-weight: 600; }"
+    },
+    {
+      "name": "Sidebar Nav Link",
+      "kind": "nav",
+      "refersTo": "nav-link",
+      "description": "Sidebar navigation item with hover/active tonal fills.",
+      "html": "<a class=\"ds-nav-link ds-nav-link--active\">Library</a>",
+      "css": ".ds-nav-link { color: #cbd5e1; text-decoration: none; padding: 10px 12px; border-radius: 10px; transition: background 0.15s ease; } .ds-nav-link:hover { background: #182230; } .ds-nav-link--active { background: #1b2736; color: #ffffff; font-weight: 600; }"
+    },
+    {
+      "name": "Games Table",
+      "kind": "custom",
+      "refersTo": "games-table",
+      "description": "Signature dense data table: fixed layout, uppercase headers, tabular numerals, row hover.",
+      "html": "<table class=\"ds-table\"><thead><tr><th>Game</th><th>App ID</th></tr></thead><tbody><tr><td>Title</td><td>12345</td></tr></tbody></table>",
+      "css": ".ds-table { width: 100%; table-layout: fixed; border-collapse: collapse; } .ds-table th, .ds-table td { text-align: left; border-bottom: 1px solid #223041; padding: 12px 10px; } .ds-table thead th { color: #94a3b8; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.08em; } .ds-table tbody tr:hover { background: #16212e; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Evidence Locker",
+    "overview": "Liberarme reads like case files, not a dashboard: dark, procedural, unshowy. Every screen exists to help someone verify a fact about a game they own, so the interface stays out of the way of the record it's showing. The voice is utilitarian and technical: dense tables, small-caps labels, tabular numerals, no hand-holding copy. The one deliberate accent, a narrow indigo-to-violet gradient, is reserved for the small number of primary actions and brand marks that deserve attention, and it must stay rare. The system explicitly rejects reading as a generic SaaS dashboard.",
+    "keyCharacteristics": [
+      "Near-black, low-chroma backgrounds with a single warm-blue/violet accent used sparingly",
+      "Zero box-shadows; hierarchy comes from background luminance steps and 1px borders",
+      "Small-caps, letter-spaced labels for metadata",
+      "Tabular numerals and fixed-layout tables for scannable data",
+      "Flat, precise, instrumented components"
+    ],
+    "rules": [
+      { "name": "The One Gradient Rule", "body": "The indigo-to-violet gradient appears only on the primary call-to-action button and the brand mark. It never becomes a card background, header treatment, or decorative fill.", "section": "colors" },
+      { "name": "The Flat-By-Default Rule", "body": "Surfaces are flat at rest. The only shadow in the system is the input focus-ring glow.", "section": "elevation" },
+      { "name": "The Small-Caps Metadata Rule", "body": "Anything describing data about data is uppercase, letter-spaced, and muted. Anything that is the data stays normal case and full-contrast.", "section": "typography" }
+    ],
+    "dos": [
+      "Do keep the accent gradient to one primary action and the brand mark per screen.",
+      "Do build hierarchy through background luminance steps and 1px borders, not shadows.",
+      "Do set metadata labels in small-caps, letter-spaced, muted type.",
+      "Do use tabular numerals and fixed table layout for new data tables."
+    ],
+    "donts": [
+      "Don't let the accent gradient spread to card backgrounds, section headers, or decorative fills.",
+      "Don't introduce box-shadows for card elevation or button emphasis.",
+      "Don't mix in a second typeface for personality."
+    ]
+  }
+}
