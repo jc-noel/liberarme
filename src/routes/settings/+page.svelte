@@ -341,6 +341,10 @@
     width: 100%;
   }
 
+  .input-wrapper input {
+    padding-right: 44px;
+  }
+
   input {
     background: var(--archive-well);
     border: 1px solid var(--border-line-soft);
