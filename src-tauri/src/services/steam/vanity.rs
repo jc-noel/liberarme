@@ -95,11 +95,6 @@ pub async fn resolve_vanity_url(vanity_name: &str, api_key: &str) -> Result<Opti
         .map_err(|e| format!("Network error: {}", e))?;
 
     // check http status
-    // we check for specific status codes here (instead of one generic
-    // error) so the user gets a message that actually tells them what
-    // to do next. this mirrors the same status handling already done
-    // in owned_games.rs::fetch_owned_games, so both Steam API call
-    // sites give the same quality of error message.
     if !response.status().is_success() {
         if response.status().as_u16() == 401 {
             return Err("Invalid API key. Check your Steam Web API key".to_string());
@@ -203,7 +198,5 @@ mod tests {
     #[test]
     fn test_resolve_vanity_url_input_validation() {
         // This test just checks that the function validates inputs
-        // not sure how to test the actual API call without mocking
-        // just verify the function signature compiles
     }
 }
