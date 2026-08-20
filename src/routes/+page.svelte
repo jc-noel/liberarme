@@ -1,81 +1,84 @@
 <script lang="ts">
-  import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
-  import { toUserMessage } from "$lib/errors";
+  import { invoke } from "@tauri-apps/api/core";
 
-  type GameRecord = {
+  let games: Array<{
     id: string;
     steam_app_id: number;
     title: string;
-    normalized_title: string;
     install_path: string;
     install_size: number;
     last_updated: number | null;
     synced_at: number;
+  }> = [];
+
+  let loading = false;
+  let syncing = false;  // ADD THIS - track sync state
+  let hasScanned = false;
+  let error = "";
+  let statusMessage = "";  // ADD THIS - for sync success messages
+
+  type OwnedGame = {
+    appid: number;
+    name: string;
+    playtime_forever: number;
   };
 
-  let games = $state<GameRecord[]>([]);
-  let loading = $state(false);
-  let error = $state("");
-  let hasScanned = $state(false);
+  function formatBytes(bytes: number): string {
+    if (bytes === 0) return "0 B";
+    const k = 1024;
+    const sizes = ["B", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
+  }
 
-  const formatBytes = (bytes: number) => {
-    if (!bytes) return "—";
-
-    const units = ["B", "KB", "MB", "GB", "TB"];
-    let size = bytes;
-    let unitIndex = 0;
-
-    while (size >= 1024 && unitIndex < units.length - 1) {
-      size /= 1024;
-      unitIndex += 1;
-    }
-
-    return `${size.toFixed(size >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
-  };
-
-  const formatDate = (timestamp: number | null) => {
-    if (!timestamp) return "—";
+  function formatDate(timestamp: number): string {
+    if (!timestamp) return "Never";
     return new Date(timestamp * 1000).toLocaleDateString();
-  };
+  }
 
-  async function scanLibrary() {
+  async function scanLocalLibrary() {
     loading = true;
     error = "";
+    statusMessage = "";
 
     try {
-      const result = await invoke<GameRecord[]>("scan_steam_games");
-      games = result;
-    } catch (err) {
-      error = toUserMessage(
-        err,
-        "Couldn't scan your Steam library. Check your connection and try again.",
-      );
-    } finally {
+      games = await invoke("scan_steam_games");
       hasScanned = true;
-      loading = false;
-    }
-  }
-
-  async function loadInstalledGames() {
-    loading = true;
-    error = "";
-
-    try {
-      const result = await invoke<GameRecord[]>("get_installed_games");
-      games = result;
     } catch (err) {
-      error = toUserMessage(
-        err,
-        "Couldn't load your installed games. Check your connection and try again.",
-      );
+      error = String(err);
     } finally {
       loading = false;
     }
   }
 
-  onMount(() => {
-    loadInstalledGames();
+  // ADD THIS FUNCTION - sync owned games from Steam API
+  async function syncOwnedGames() {
+    syncing = true;
+    error = "";
+    statusMessage = "";
+
+    try {
+      const ownedGames = await invoke<OwnedGame[]>("sync_owned_games");
+      statusMessage = `Successfully synced ${ownedGames.length} owned games from Steam.`;
+      // Optionally reload the local game list to show any new matches
+      // games = await invoke("get_installed_games");
+    } catch (err) {
+      error = String(err);
+    } finally {
+      syncing = false;
+    }
+  }
+
+  onMount(async () => {
+    try {
+      games = await invoke("get_installed_games");
+      if (games.length > 0) {
+        hasScanned = true;
+      }
+    } catch (err) {
+      error = String(err);
+    }
   });
 </script>
 
@@ -84,91 +87,100 @@
     <h1>Library</h1>
     <p>Scan locally first. Keep everything in one place.</p>
   </div>
+</section>
 
-  <button class="scan-btn" onclick={scanLibrary} disabled={loading}>
+<section class="actions">
+  <button class="scan-btn" on:click={scanLocalLibrary} disabled={loading}>
     {loading ? "Scanning..." : "Scan Library"}
+  </button>
+
+  <!-- ADD THIS BUTTON - sync owned games -->
+  <button class="sync-btn" on:click={syncOwnedGames} disabled={syncing}>
+    {syncing ? "Syncing..." : "Sync Owned Games"}
   </button>
 </section>
 
-<section class="stats-grid">
-  <article class="stat-card">
+<section class="status-cards">
+  <div class="status-card">
     <h2>Games</h2>
     <p>{games.length}</p>
-  </article>
+  </div>
 
-  <article class="stat-card">
+  <div class="status-card">
     <h2>Source</h2>
     <p>Steam</p>
-  </article>
+  </div>
 
-  <article class="stat-card">
+  <div class="status-card">
     <h2>Mode</h2>
     <p>Local scan</p>
-  </article>
+  </div>
 </section>
 
 {#if error}
-  <p class="error" role="alert">{error}</p>
+  <p class="error">{error}</p>
+{/if}
+
+{#if statusMessage}
+  <p class="success">{statusMessage}</p>
 {/if}
 
 {#if loading}
-  <p class="muted" aria-live="polite">Scanning your Steam folders...</p>
+  <p class="muted">Scanning your Steam folders...</p>
 {/if}
 
 {#if !loading && !hasScanned && games.length === 0}
-  <section class="panel">
+  <div class="empty-state">
     <p>No games scanned yet. Click <strong>Scan Library</strong> to begin.</p>
-  </section>
+  </div>
 {/if}
 
 {#if !loading && hasScanned && games.length === 0}
-  <section class="panel">
+  <div class="empty-state">
     <p>No games found on this machine.</p>
-  </section>
+  </div>
 {/if}
 
 {#if games.length > 0}
-  <section class="panel">
-    <table class="games-table">
+  <div class="table-container">
+    <table>
       <thead>
         <tr>
-          <th class="col-game" scope="col">Game</th>
-          <th class="col-status" scope="col">Status</th>
-          <th class="col-numeric" scope="col">App ID</th>
-          <th class="col-numeric" scope="col">Size</th>
-          <th class="col-activity" scope="col">Activity</th>
+          <th>Game</th>
+          <th>Status</th>
+          <th>App ID</th>
+          <th>Size</th>
+          <th>Activity</th>
         </tr>
       </thead>
       <tbody>
         {#each games as game (game.id)}
           <tr>
-            <td class="col-game">
-              <div class="game-title">{game.title}</div>
-              <small class="game-path" title={game.install_path}
-                >{game.install_path}</small
-              >
+            <td>
+              <div class="game-info">
+                <div>{game.title}</div>
+                <div class="install-path">{game.install_path}</div>
+              </div>
             </td>
-            <td class="col-status"><span class="badge">installed</span></td>
-            <td class="col-numeric">{game.steam_app_id}</td>
-            <td class="col-numeric">{formatBytes(game.install_size)}</td>
-            <td class="col-activity">
-              <small>updated: {formatDate(game.last_updated)}</small>
-              <small>synced: {formatDate(game.synced_at)}</small>
+            <td>installed</td>
+            <td>{game.steam_app_id}</td>
+            <td>{formatBytes(game.install_size)}</td>
+            <td>
+              <div class="activity">
+                <div>updated: {formatDate(game.last_updated || 0)}</div>
+                <div>synced: {formatDate(game.synced_at)}</div>
+              </div>
             </td>
           </tr>
         {/each}
       </tbody>
     </table>
-  </section>
+  </div>
 {/if}
 
 <style>
   .page-header {
-    display: flex;
-    justify-content: space-between;
-    gap: 16px;
-    align-items: center;
-    margin-bottom: 20px;
+    margin-bottom: 24px;
   }
 
   .page-header h1 {
@@ -178,155 +190,157 @@
 
   .page-header p {
     margin: 6px 0 0;
-    color: var(--slate-ash);
+    color: #94a3b8;
     font-size: 1.05rem;
   }
 
-  .scan-btn {
-    border: none;
-    border-radius: 14px;
-    padding: 11px 18px;
-    color: var(--on-accent);
-    font-weight: 700;
-    background: linear-gradient(135deg, var(--case-file-indigo-deep), var(--case-file-violet));
-    cursor: pointer;
+  .actions {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 24px;
   }
 
-  .scan-btn:disabled {
-    opacity: 0.65;
+  .scan-btn,
+  .sync-btn {
+    border: none;
+    border-radius: 12px;
+    padding: 10px 18px;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+    transition: opacity 0.15s ease;
+  }
+
+  .scan-btn {
+    background: linear-gradient(135deg, #5b7cff, #7c3aed);
+  }
+
+  .sync-btn {
+    background: linear-gradient(135deg, #34d399, #10b981);
+  }
+
+  .scan-btn:hover:not(:disabled),
+  .sync-btn:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .scan-btn:disabled,
+  .sync-btn:disabled {
+    opacity: 0.6;
     cursor: not-allowed;
   }
 
-  .stats-grid {
+  .status-cards {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     gap: 12px;
-    margin-bottom: 16px;
+    margin-bottom: 24px;
   }
 
-  .stat-card {
-    border: 1px solid var(--border-line);
-    border-radius: 14px;
-    padding: 12px 14px;
-    background: var(--archive-card);
+  .status-card {
+    border: 1px solid #243244;
+    border-radius: 12px;
+    padding: 16px;
+    background: #111a25;
   }
 
-  .stat-card h2 {
-    margin: 0 0 4px;
-    font-size: 0.82rem;
+  .status-card h2 {
+    margin: 0 0 8px;
+    font-size: 0.9rem;
+    color: #94a3b8;
+    font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--slate-ash);
   }
 
-  .stat-card p {
+  .status-card p {
     margin: 0;
-    font-size: 1.25rem;
+    font-size: 1.8rem;
+    color: #e5e7eb;
     font-weight: 700;
   }
 
-  .panel {
-    border: 1px dashed var(--border-dashed);
-    border-radius: 14px;
-    padding: 16px;
-    background: var(--archive-card);
-    color: var(--slate-ash-bright);
-    overflow-x: auto;
+  .error {
+    color: #f87171;
+    margin-bottom: 16px;
+    font-size: 0.95rem;
+  }
+
+  .success {
+    color: #34d399;
+    margin-bottom: 16px;
+    font-size: 0.95rem;
   }
 
   .muted {
-    color: var(--slate-ash);
+    color: #94a3b8;
+    margin-bottom: 16px;
   }
 
-  .error {
-    color: var(--danger);
-    font-weight: 600;
+  .empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: #94a3b8;
   }
 
-  .games-table {
+  .empty-state p {
+    margin: 0;
+    font-size: 1.05rem;
+  }
+
+  .table-container {
+    overflow-x: auto;
+    border: 1px solid #243244;
+    border-radius: 12px;
+    background: #111a25;
+  }
+
+  table {
     width: 100%;
-    min-width: 640px;
-    table-layout: fixed;
     border-collapse: collapse;
   }
 
-  .games-table th,
-  .games-table td {
+  thead {
+    background: #0f1722;
+    border-bottom: 1px solid #243244;
+  }
+
+  th {
+    padding: 12px;
     text-align: left;
-    border-bottom: 1px solid var(--table-line);
-    padding: 12px 10px;
-    line-height: 1.45;
-    vertical-align: top;
-  }
-
-  .games-table thead th {
-    color: var(--slate-ash);
-    font-size: 0.82rem;
+    color: #cbd5e1;
+    font-weight: 600;
+    font-size: 0.9rem;
     text-transform: uppercase;
-    letter-spacing: 0.08em;
   }
 
-  .games-table tbody tr:hover {
-    background: var(--row-hover);
+  td {
+    padding: 12px;
+    border-bottom: 1px solid #243244;
+    color: #e5e7eb;
   }
 
-  .col-game {
-    width: 42%;
+  tbody tr:hover {
+    background: #1a2332;
   }
 
-  .col-status {
-    width: 14%;
+  .game-info {
+    display: grid;
+    gap: 4px;
   }
 
-  .col-numeric {
-    width: 14%;
-    text-align: right;
-    font-variant-numeric: tabular-nums;
+  .game-info div:first-child {
+    font-weight: 500;
   }
 
-  .col-activity {
-    width: 22%;
+  .install-path {
+    color: #94a3b8;
+    font-size: 0.85rem;
   }
 
-  .game-title {
-    font-weight: 600;
-  }
-
-  .game-path {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 100%;
-  }
-
-  .badge {
-    display: inline-block;
-    padding: 3px 10px;
-    border-radius: 999px;
-    background: rgba(var(--case-file-indigo-rgb), 0.16);
-    color: var(--accent-text-soft);
-    font-size: 0.78rem;
-    font-weight: 600;
-  }
-
-  small {
-    color: var(--slate-ash);
-    display: block;
-    margin-top: 2px;
-  }
-
-  @media (max-width: 640px) {
-    .page-header {
-      flex-direction: column;
-      align-items: flex-start;
-    }
-
-    .scan-btn {
-      width: 100%;
-    }
-
-    .stats-grid {
-      grid-template-columns: 1fr;
-    }
+  .activity {
+    display: grid;
+    gap: 4px;
+    font-size: 0.9rem;
+    color: #94a3b8;
   }
 </style>

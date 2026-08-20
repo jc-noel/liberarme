@@ -5,6 +5,7 @@ use serde::Serialize;
 use services::db::{self, GameRecord, SteamSyncMetadata};
 use services::steam::scanner;
 use services::steam::vanity;
+use services::steam::owned_games;
 use std::sync::Mutex;
 use tauri::{Manager, State};
 
@@ -199,6 +200,53 @@ fn validate_steam_credentials(state: State<AppState>) -> Result<SteamSyncMetadat
     db::get_steam_sync_metadata(&conn).map_err(|e| e.to_string())
 }
 
+/// syncs owned games from steam using stored creds
+/// reads api key and steamid64 from sqlite settings
+/// returns list of owned games or error message
+#[tauri::command]
+async fn sync_owned_games(state: State<'_, AppState>) -> Result<Vec<owned_games::OwnedGame>, String> {
+    // get stored creds, then drop lock before awaiting
+    let (api_key, steam_id64) = {
+        let conn = state.db_conn.lock().map_err(|e| e.to_string())?;
+
+        let api_key = db::get_setting(&conn, "steam.api_key")
+            .map_err(|e| e.to_string())?
+            .ok_or("Steam API key not configured. Please configure settings first.")?;
+
+        let steam_id64 = db::get_setting(&conn, "steam.steam_id64")
+            .map_err(|e| e.to_string())?
+            .ok_or("SteamID64 not configured. Please configure settings first.")?;
+        (api_key, steam_id64)
+    };
+
+    // validate creds
+    if api_key.trim().is_empty() {
+        return Err("Steam API key is empty".to_string());
+    }
+
+    if !vanity::validate_steamid64(&steam_id64) {
+        return Err("SteamID64 is invalid format".to_string());
+    }
+
+    // call steam api
+    match owned_games::fetch_owned_games(&steam_id64, &api_key).await {
+        Ok(games) => {
+            let conn = state.db_conn.lock().map_err(|e| e.to_string())?;
+            db::update_steam_sync_metadata(&conn, "success", None)
+                .map_err(|e| e.to_string())?;
+
+            Ok(games)
+        }
+        Err(api_error) => {
+            let conn = state.db_conn.lock().map_err(|e| e.to_string())?;
+            db::update_steam_sync_metadata(&conn, "failed", Some(&api_error))
+                .map_err(|e| e.to_string())?;
+
+            Err(api_error)
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -229,7 +277,8 @@ pub fn run() {
             set_steam_settings,
             get_steam_settings,
             resolve_steam_id,
-            validate_steam_credentials
+            validate_steam_credentials,
+            sync_owned_games
         ])
         .plugin(tauri_plugin_opener::init())
         .run(tauri::generate_context!())
