@@ -91,7 +91,7 @@ pub fn run_steam_scan(conn: &Connection) -> Result<Vec<GameRecord>, String> {
     }
 
     // return all games from db
-    db::get_all_games(conn).map_err(|e| e.to_string())
+    db::get_installed_games_only(conn).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
