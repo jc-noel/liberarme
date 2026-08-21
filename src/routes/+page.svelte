@@ -10,15 +10,18 @@
     install_size: number | null;
     last_updated: number | null;
     synced_at: number;
-    is_installed: boolean; // ADDED - drives the status badge below
-    is_owned: boolean;     // ADDED - drives the status badge below
+    is_installed: boolean;
+    is_owned: boolean;
   }> = [];
 
   let loading = false;
-  let syncing = false;  // ADD THIS - track sync state
+  let loadingLabel = "";
+  let syncing = false;
   let hasScanned = false;
   let error = "";
-  let statusMessage = "";  // ADD THIS - for sync success messages
+  let statusMessage = "";
+  let infoMessage = "";
+  let dropdownOpen = false;
 
   type OwnedGame = {
     appid: number;
@@ -39,12 +42,10 @@
     return new Date(timestamp * 1000).toLocaleDateString();
   }
 
-  // Computes a human-readable status label from the two boolean flags
-  // on a game row. Keeping this as a small pure function (rather than
-  // inline ternaries in the markup) makes it easy to unit test later
-  // and easy to extend once Milestone 2 (Classification Engine) adds
-  // real DRM statuses on top of this.
-  function getStatusLabel(game: { is_installed: boolean; is_owned: boolean }): string {
+  function getStatusLabel(game: {
+    is_installed: boolean;
+    is_owned: boolean;
+  }): string {
     if (game.is_installed) {
       return "Installed";
     }
@@ -54,44 +55,124 @@
     return "Unknown";
   }
 
-  async function scanLocalLibrary() {
+  function isMissingCredentialsError(message: string): boolean {
+    return message.includes("not configured");
+  }
+
+  async function refreshCombinedList() {
+    games = await invoke("get_all_games");
+    if (games.length > 0) {
+      hasScanned = true;
+    }
+  }
+
+  async function scanLocalOnly() {
     loading = true;
+    loadingLabel = "Scanning locally...";
     error = "";
     statusMessage = "";
+    infoMessage = "";
 
     try {
-      games = await invoke("scan_steam_games");
-      hasScanned = true;
+      await invoke("scan_steam_games");
+      await refreshCombinedList();
     } catch (err) {
       error = String(err);
     } finally {
       loading = false;
+      loadingLabel = "";
     }
   }
 
-  async function syncOwnedGames() {
-    syncing = true;
+  async function syncOwnedOnly() {
+    loading = true;
+    loadingLabel = "Syncing owned games...";
     error = "";
     statusMessage = "";
+    infoMessage = "";
 
     try {
       const ownedGames = await invoke<OwnedGame[]>("sync_owned_games");
       statusMessage = `Successfully synced ${ownedGames.length} owned games from Steam.`;
-      // Optionally reload the local game list to show any new matches
-      // games = await invoke("get_installed_games");
+      await refreshCombinedList();
+    } catch (err) {
+      const message = String(err);
+      if (isMissingCredentialsError(message)) {
+        infoMessage =
+          "Connect your Steam account in Settings to sync owned games.";
+      } else {
+        error = message;
+      }
+    } finally {
+      loading = false;
+      loadingLabel = "";
+    }
+  }
+
+  async function scanAll() {
+    loading = true;
+    error = "";
+    statusMessage = "";
+    infoMessage = "";
+
+    // local scan. If this fails, stop - there's nothing to reconcile.
+    loadingLabel = "Scanning locally...";
+    try {
+      await invoke("scan_steam_games");
     } catch (err) {
       error = String(err);
-    } finally {
-      syncing = false;
+      loading = false;
+      loadingLabel = "";
+      return;
+    }
+
+    // first-run users who haven't configured Settings yet, so it's shown
+    // as a soft hint rather than an error, and local scan results still stand.
+    loadingLabel = "Syncing owned games...";
+    try {
+      const ownedGames = await invoke<OwnedGame[]>("sync_owned_games");
+      statusMessage = `Successfully synced ${ownedGames.length} owned games from Steam.`;
+    } catch (err) {
+      const message = String(err);
+      if (isMissingCredentialsError(message)) {
+        infoMessage =
+          "Connect your Steam account in Settings to also see owned-but-not-installed games.";
+      } else {
+        infoMessage = `Local scan complete. Owned games sync didn't finish: ${message}`;
+      }
+    }
+
+    // local scan results should still populate the table.
+    try {
+      await refreshCombinedList();
+    } catch (err) {
+      error = String(err);
+    }
+
+    loading = false;
+    loadingLabel = "";
+  }
+
+  function toggleDropdown() {
+    dropdownOpen = !dropdownOpen;
+  }
+
+  function closeDropdown() {
+    dropdownOpen = false;
+  }
+
+  async function handleDropdownAction(action: "local" | "owned") {
+    closeDropdown();
+    if (action === "local") {
+      await scanLocalOnly();
+    } else {
+      await syncOwnedOnly();
     }
   }
 
   onMount(async () => {
     try {
-      games = await invoke("get_installed_games");
-      if (games.length > 0) {
-        hasScanned = true;
-      }
+      await refreshCombinedList();
     } catch (err) {
       error = String(err);
     }
@@ -106,14 +187,32 @@
 </section>
 
 <section class="actions">
-  <button class="scan-btn" on:click={scanLocalLibrary} disabled={loading}>
-    {loading ? "Scanning..." : "Scan Library"}
-  </button>
+  <div class="split-btn" class:open={dropdownOpen}>
+    <button class="scan-all-btn" onclick={scanAll} disabled={loading}>
+      {loading ? loadingLabel || "Working..." : "Scan All"}
+    </button>
+    <button
+      class="split-caret"
+      onclick={toggleDropdown}
+      disabled={loading}
+      aria-haspopup="true"
+      aria-expanded={dropdownOpen}
+      aria-label="More scan options"
+    >
+      ▾
+    </button>
 
-  <!-- ADD THIS BUTTON - sync owned games -->
-  <button class="sync-btn" on:click={syncOwnedGames} disabled={syncing}>
-    {syncing ? "Syncing..." : "Sync Owned Games"}
-  </button>
+    {#if dropdownOpen}
+      <div class="dropdown-menu" role="menu">
+        <button role="menuitem" onclick={() => handleDropdownAction("local")}>
+          Scan Local Only
+        </button>
+        <button role="menuitem" onclick={() => handleDropdownAction("owned")}>
+          Sync Owned Games Only
+        </button>
+      </div>
+    {/if}
+  </div>
 </section>
 
 <section class="status-cards">
@@ -124,12 +223,12 @@
 
   <div class="status-card">
     <h2>Source</h2>
-    <p>Steam</p>
+    <p>{games.some((g) => g.is_owned) ? "Local + API" : "Local Steam scan"}</p>
   </div>
 
   <div class="status-card">
     <h2>Mode</h2>
-    <p>Local scan</p>
+    <p>{loading ? "Scan" : "Review"}</p>
   </div>
 </section>
 
@@ -141,13 +240,17 @@
   <p class="success">{statusMessage}</p>
 {/if}
 
+{#if infoMessage}
+  <p class="info">{infoMessage}</p>
+{/if}
+
 {#if loading}
-  <p class="muted">Scanning your Steam folders...</p>
+  <p class="muted">{loadingLabel}</p>
 {/if}
 
 {#if !loading && !hasScanned && games.length === 0}
   <div class="empty-state">
-    <p>No games scanned yet. Click <strong>Scan Library</strong> to begin.</p>
+    <p>No games scanned yet. Click <strong>Scan All</strong> to begin.</p>
   </div>
 {/if}
 
@@ -216,34 +319,69 @@
     margin-bottom: 24px;
   }
 
-  .scan-btn,
-  .sync-btn {
+  .split-btn {
+    position: relative;
+    display: flex;
+  }
+
+  .scan-all-btn {
     border: none;
-    border-radius: 12px;
+    border-radius: 12px 0 0 12px;
     padding: 10px 18px;
     color: #fff;
     font-weight: 700;
     cursor: pointer;
+    background: linear-gradient(135deg, #5b7cff, #7c3aed);
     transition: opacity 0.15s ease;
   }
 
-  .scan-btn {
+  .split-caret {
+    border: none;
+    border-left: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 0 12px 12px 0;
+    padding: 10px 12px;
+    color: #fff;
+    cursor: pointer;
     background: linear-gradient(135deg, #5b7cff, #7c3aed);
+    transition: opacity 0.15s ease;
   }
 
-  .sync-btn {
-    background: linear-gradient(135deg, #34d399, #10b981);
-  }
-
-  .scan-btn:hover:not(:disabled),
-  .sync-btn:hover:not(:disabled) {
+  .scan-all-btn:hover:not(:disabled),
+  .split-caret:hover:not(:disabled) {
     opacity: 0.9;
   }
 
-  .scan-btn:disabled,
-  .sync-btn:disabled {
+  .scan-all-btn:disabled,
+  .split-caret:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+
+  .dropdown-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    min-width: 200px;
+    display: grid;
+    background: #111a25;
+    border: 1px solid #243244;
+    border-radius: 10px;
+    overflow: hidden;
+    z-index: 10;
+  }
+
+  .dropdown-menu button {
+    text-align: left;
+    padding: 10px 14px;
+    border: none;
+    background: transparent;
+    color: #e5e7eb;
+    cursor: pointer;
+    font-size: 0.9rem;
+  }
+
+  .dropdown-menu button:hover {
+    background: #1a2332;
   }
 
   .status-cards {
@@ -283,6 +421,12 @@
 
   .success {
     color: #34d399;
+    margin-bottom: 16px;
+    font-size: 0.95rem;
+  }
+
+  .info {
+    color: #7dd3fc;
     margin-bottom: 16px;
     font-size: 0.95rem;
   }
