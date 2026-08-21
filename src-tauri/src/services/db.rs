@@ -44,7 +44,6 @@ pub fn init_db(conn: &Connection) -> Result<()> {
     let stored_version: i64 = get_setting(conn, "schema_version")?
         .and_then(|v| v.parse().ok())
         .unwrap_or(1);
-
     
     if stored_version < CURRENT_SCHEMA_VERSION {
         // pre-alpha migration strategy: no real user data worth preserving yet
@@ -89,12 +88,12 @@ pub fn upsert_game(conn: &Connection, game: &GameRecord) -> Result<()> {
         ON CONFLICT(steam_app_id) DO UPDATE SET
             title = excluded.title,
             normalized_title = excluded.normalized_title,
-            is_owned = excluded.is_owned,
+            is_owned = CASE WHEN games.is_owned = 1 THEN 1 ELSE excluded.is_owned END,
             is_installed = excluded.is_installed,
             install_path = excluded.install_path,
             install_size = excluded.install_size,
             last_updated = excluded.last_updated,
-            owned_synced_at = excluded.owned_synced_at,
+            owned_synced_at = games.owned_synced_at,
             synced_at = strftime('%s','now')",
         params![
             game.id,
@@ -308,6 +307,74 @@ pub fn upsert_owned_games(conn: &Connection, games: &[(u32, String)]) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_ownership_sync_survives_a_subsequent_local_rescan() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_db(&conn).unwrap();
+
+        // Step 1: local scan finds Portal installed (not yet known to be owned)
+        let scanned = GameRecord {
+            id: "steam_400".to_string(),
+            steam_app_id: 400,
+            title: "Portal".to_string(),
+            normalized_title: "portal".to_string(),
+            is_owned: false,
+            is_installed: true,
+            install_path: Some("/path/to/Portal".to_string()),
+            install_size: Some(4294967296),
+            last_updated: Some(1625000000),
+            owned_synced_at: None,
+            synced_at: 0,
+        };
+        upsert_game(&conn, &scanned).unwrap();
+
+        // Step 2: ownership sync confirms Portal is owned
+        let owned = vec![(400u32, "Portal".to_string())];
+        upsert_owned_games(&conn, &owned).unwrap();
+
+        let after_sync = get_all_games(&conn).unwrap();
+        assert_eq!(after_sync.len(), 1);
+        assert!(after_sync[0].is_owned, "ownership sync should have set is_owned");
+        assert!(after_sync[0].owned_synced_at.is_some(), "ownership sync should stamp owned_synced_at");
+
+        // Step 3: user re-runs local scan. The scanner has no concept of
+        // Steam ownership, so it always builds a fresh GameRecord with
+        // is_owned: false and owned_synced_at: None (see scanner.rs). This
+        // rescan must NOT erase the ownership data set in step 2.
+        let rescanned = GameRecord {
+            id: "steam_400".to_string(),
+            steam_app_id: 400,
+            title: "Portal".to_string(),
+            normalized_title: "portal".to_string(),
+            is_owned: false,       // scanner never knows about ownership
+            is_installed: true,
+            install_path: Some("/path/to/Portal".to_string()),
+            install_size: Some(4294967296),
+            last_updated: Some(1625000500), // pretend Steam updated the game
+            owned_synced_at: None, // scanner never sets this
+            synced_at: 0,
+        };
+        upsert_game(&conn, &rescanned).unwrap();
+
+        let after_rescan = get_all_games(&conn).unwrap();
+        assert_eq!(after_rescan.len(), 1, "rescan should not create a duplicate row");
+
+        let game = &after_rescan[0];
+        assert!(
+            game.is_owned,
+            "a local rescan must not erase ownership data set by a prior Steam sync"
+        );
+        assert!(
+            game.owned_synced_at.is_some(),
+            "a local rescan must not erase the owned_synced_at timestamp set by a prior Steam sync"
+        );
+
+        // Sanity check: the rescan's own install-related updates should
+        // still go through normally.
+        assert_eq!(game.last_updated, Some(1625000500));
+        assert!(game.is_installed);
+    }
 
     #[test]
     fn test_get_installed_games_only_filters_out_owned_only() {
