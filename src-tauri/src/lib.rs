@@ -310,6 +310,61 @@ mod tests {
     use super::*;
     use std::panic;
 
+    // Proves the get_all_games command path (state lock -> db::get_all_games)
+    // returns the full reconciled set - installed-only, owned-only, and
+    // both - not just installed games. This is the specific behavior the
+    // "Reconcile owned vs installed games" milestone depends on: without
+    // this command, owned-but-not-installed titles are written to SQLite
+    // by sync_owned_games but never surfaced anywhere in the app.
+    #[test]
+    fn get_all_games_command_path_returns_installed_and_owned_only_rows() {
+        let conn = Connection::open_in_memory().unwrap();
+        db::init_db(&conn).unwrap();
+
+        // simulate a prior local scan: one installed game
+        let installed = GameRecord {
+            id: "steam_400".to_string(),
+            steam_app_id: 400,
+            title: "Portal".to_string(),
+            normalized_title: "portal".to_string(),
+            is_owned: false,
+            is_installed: true,
+            install_path: Some("/path/to/Portal".to_string()),
+            install_size: Some(4294967296),
+            last_updated: Some(1625000000),
+            owned_synced_at: None,
+            synced_at: 0,
+        };
+        db::upsert_game(&conn, &installed).unwrap();
+
+        // simulate a prior ownership sync: one owned-only game (never installed)
+        let owned_only = vec![(620u32, "Portal 2".to_string())];
+        db::upsert_owned_games(&conn, &owned_only).unwrap();
+
+        let state = AppState {
+            db_conn: Mutex::new(conn),
+        };
+
+        // exercise the exact same lock-then-call shape the real
+        // get_all_games Tauri command uses.
+        let result: Result<Vec<GameRecord>, String> = (|| {
+            let conn = state.db_conn.lock().map_err(|e| e.to_string())?;
+            db::get_all_games(&conn).map_err(|e| e.to_string())
+        })();
+
+        let games = result.expect("get_all_games command path should succeed");
+        assert_eq!(games.len(), 2, "should return both the installed game and the owned-only game");
+
+        let portal = games.iter().find(|g| g.steam_app_id == 400).expect("Portal should be present");
+        assert!(portal.is_installed, "Portal should still be marked installed");
+        assert!(!portal.is_owned, "Portal was only ever locally scanned, never synced as owned");
+
+        let portal_2 = games.iter().find(|g| g.steam_app_id == 620).expect("Portal 2 should be present");
+        assert!(portal_2.is_owned, "Portal 2 should be marked owned from the sync");
+        assert!(!portal_2.is_installed, "Portal 2 was never locally scanned/installed");
+        assert_eq!(portal_2.install_path, None, "owned-only game should have no install path");
+    }
+
     // Proves that a failure in one Steam workflow (ownership sync) cannot
     // take down the local scan workflow, at the shared-state level.
     //

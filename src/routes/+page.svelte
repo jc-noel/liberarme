@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
+  import { getStatusLabel, isMissingCredentialsError } from "$lib/libraryHelpers";
 
   let games: Array<{
     id: string;
@@ -40,23 +41,6 @@
   function formatDate(timestamp: number): string {
     if (!timestamp) return "Never";
     return new Date(timestamp * 1000).toLocaleDateString();
-  }
-
-  function getStatusLabel(game: {
-    is_installed: boolean;
-    is_owned: boolean;
-  }): string {
-    if (game.is_installed) {
-      return "Installed";
-    }
-    if (game.is_owned) {
-      return "Owned (not installed)";
-    }
-    return "Unknown";
-  }
-
-  function isMissingCredentialsError(message: string): boolean {
-    return message.includes("not configured");
   }
 
   async function refreshCombinedList() {
