@@ -297,3 +297,63 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::panic;
+
+    // Proves that a failure in one Steam workflow (ownership sync) cannot
+    // take down the local scan workflow, at the shared-state level.
+    //
+    // AppState holds a single Mutex<Connection> used by every command.
+    // A Mutex only becomes "poisoned" if a thread panics while holding
+    // the lock - a normal Err(...) return does NOT poison it. This test
+    // simulates the worst case (a panic while the lock is held, as if a
+    // future bug crashed mid-sync) and confirms that a subsequent
+    // db-locking command (standing in for scan_steam_games) still
+    // returns a clean, recoverable Err instead of taking down the app.
+    #[test]
+    fn local_scan_path_survives_a_poisoned_db_mutex() {
+        let conn = Connection::open_in_memory().unwrap();
+        db::init_db(&conn).unwrap();
+
+        let state = AppState {
+            db_conn: Mutex::new(conn),
+        };
+
+        // Simulate a hypothetical bug: something panics while holding
+        // the db lock during an ownership sync. We deliberately swallow
+        // the panic's default stderr output so the test log stays clean.
+        let previous_hook = panic::take_hook();
+        panic::set_hook(Box::new(|_| {}));
+
+        let sync_result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            let _conn_guard = state.db_conn.lock().unwrap();
+            panic!("simulated failure mid-sync while holding the db lock");
+        }));
+
+        panic::set_hook(previous_hook);
+        assert!(sync_result.is_err(), "expected the simulated sync panic to unwind");
+
+        // The mutex is now poisoned. Confirm that code shaped like our
+        // real commands (state.db_conn.lock().map_err(|e| e.to_string()))
+        // degrades to a clean, recoverable error instead of panicking
+        // the whole app - this is exactly how scan_steam_games,
+        // get_installed_games, etc. all acquire the lock today.
+        let scan_like_result: Result<(), String> = (|| {
+            let conn = state.db_conn.lock().map_err(|e| e.to_string())?;
+            db::get_installed_games_only(&conn).map_err(|e| e.to_string())?;
+            Ok(())
+        })();
+
+        assert!(
+            scan_like_result.is_err(),
+            "a poisoned mutex should surface as a normal Err, not a second panic"
+        );
+        assert!(
+            scan_like_result.unwrap_err().contains("poisoned"),
+            "error message should clearly indicate the lock was poisoned"
+        );
+    }
+}

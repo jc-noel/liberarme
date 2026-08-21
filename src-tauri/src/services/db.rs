@@ -113,6 +113,7 @@ pub fn upsert_game(conn: &Connection, game: &GameRecord) -> Result<()> {
     Ok(())
 }
 
+#[allow(dead_code)]
 /// Fetch all stored games from db, ordered by title
 pub fn get_all_games(conn: &Connection) -> Result<Vec<GameRecord>> {
     let mut stmt = conn.prepare(

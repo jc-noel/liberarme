@@ -3,6 +3,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { toUserMessage } from "$lib/errors";
+  import { validateSteamApiKey, validateSteamId64 } from "$lib/steamValidation";
 
   const STEAM_API_KEY_URL = "https://steamcommunity.com/dev/apikey";
 
@@ -39,21 +40,6 @@
     steam_id64: string | null;
     error: string | null;
   };
-
-  function validateSteamApiKey(value: string): string | null {
-    const v = value.trim();
-    if (!v) return "Steam API key is required.";
-    if (v.length < 8) return "Steam API key looks too short.";
-    return null;
-  }
-
-  function validateSteamId64(value: string): string | null {
-    const v = value.trim();
-    if (!v) return "SteamID64 is required.";
-    if (!/^\d{17}$/.test(v))
-      return "SteamID64 must be exactly 17 numeric digits.";
-    return null;
-  }
 
   $: apiKeyErrorRaw = validateSteamApiKey(steamApiKey);
   $: steamIdErrorRaw = validateSteamId64(steamId64);
