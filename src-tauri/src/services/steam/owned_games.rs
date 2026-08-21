@@ -268,4 +268,23 @@ mod tests {
         assert!(result.is_err());
         assert!(result.unwrap_err().starts_with("Failed to parse Steam API response"));
     }
+
+    #[tokio::test]
+    async fn test_fetch_owned_games_network_failure_returns_network_error_message() {
+        // 127.0.0.1:9 is the standard "discard" port - nothing listens there,
+        // so this reliably triggers a real connection failure (not a mocked
+        // response) without depending on external network access or DNS.
+        // This is different from the 401/403/500 tests above: those all get
+        // a real HTTP response from mockito, this one never connects at all.
+        let unreachable_url = "http://127.0.0.1:9";
+
+        let result =
+            fetch_owned_games_at(unreachable_url, "76561198123456789", "fake_key").await;
+
+        assert!(result.is_err());
+        assert!(
+            result.unwrap_err().starts_with("Network error:"),
+            "expected a connection failure to be mapped to a 'Network error:' message"
+        );
+    }
 }
