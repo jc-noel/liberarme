@@ -404,7 +404,7 @@ fn page_title_from_location(location: &str) -> Result<String, String> {
         .split("/wiki/")
         .nth(1)
         .ok_or_else(|| format!("Unexpected PCGamingWiki redirect target: {location}"))?
-        .split(['?', '#'])
+        .split(|ch| ch == '?' || ch == '#')
         .next()
         .unwrap_or_default();
 
@@ -501,20 +501,22 @@ fn extract_balanced_template(text: &str, start: usize) -> Option<&str> {
     let mut depth = 0_i32;
 
     while i + 1 < bytes.len() {
-        match (&bytes[i], &bytes[i + 1]) {
-            (b'{', b'{') => {
-                depth += 1;
-                i += 2;
-            }
-            (b'}', b'}') => {
-                depth -= 1;
-                i += 2;
-                if depth == 0 {
-                    return text.get(start..i);
-                }
-            }
-            _ => i += 1,
+        if bytes[i] == b'{' && bytes[i + 1] == b'{' {
+            depth += 1;
+            i += 2;
+            continue;
         }
+
+        if bytes[i] == b'}' && bytes[i + 1] == b'}' {
+            depth -= 1;
+            i += 2;
+            if depth == 0 {
+                return text.get(start..i);
+            }
+            continue;
+        }
+
+        i += 1;
     }
 
     None
