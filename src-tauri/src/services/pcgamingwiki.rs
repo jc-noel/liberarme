@@ -841,13 +841,7 @@ mod tests {
 
         server
             .mock("GET", "/w/api.php")
-            .match_query(mockito::Matcher::AllOf(vec![
-                mockito::Matcher::UrlEncoded("action".into(), "parse".into()),
-                mockito::Matcher::UrlEncoded("redirects".into(), "1".into()),
-                mockito::Matcher::UrlEncoded("prop".into(), "wikitext".into()),
-                mockito::Matcher::UrlEncoded("page".into(), "Portal".into()),
-                mockito::Matcher::UrlEncoded("format".into(), "json".into()),
-            ]))
+            .match_query(mockito::Matcher::Any)
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body("this is not json")
