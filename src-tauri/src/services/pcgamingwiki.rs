@@ -834,6 +834,10 @@ mod tests {
 
         server
             .mock("GET", "/api/appid.php")
+            .match_query(mockito::Matcher::UrlEncoded(
+                "appid".into(),
+                "400".into(),
+            ))
             .with_status(302)
             .with_header("location", "/wiki/Portal")
             .create_async()
@@ -860,7 +864,10 @@ mod tests {
         .await
         .unwrap_err();
 
-        assert!(error.starts_with("Failed to parse PCGamingWiki API response"));
+        assert!(
+            error.starts_with("Failed to parse PCGamingWiki API response"),
+            "unexpected error: {error}"
+        );
 
         let rows = get_evidence_for_game(&conn, "steam_400").unwrap();
         assert!(rows.is_empty());
