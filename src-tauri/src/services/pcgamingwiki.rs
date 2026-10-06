@@ -739,6 +739,13 @@ mod tests {
 
         server
             .mock("GET", "/w/api.php")
+            .match_query(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("action".into(), "parse".into()),
+                mockito::Matcher::UrlEncoded("redirects".into(), "1".into()),
+                mockito::Matcher::UrlEncoded("prop".into(), "wikitext".into()),
+                mockito::Matcher::UrlEncoded("page".into(), "Portal".into()),
+                mockito::Matcher::UrlEncoded("format".into(), "json".into()),
+            ]))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(
@@ -834,6 +841,13 @@ mod tests {
 
         server
             .mock("GET", "/w/api.php")
+            .match_query(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("action".into(), "parse".into()),
+                mockito::Matcher::UrlEncoded("redirects".into(), "1".into()),
+                mockito::Matcher::UrlEncoded("prop".into(), "wikitext".into()),
+                mockito::Matcher::UrlEncoded("page".into(), "Portal".into()),
+                mockito::Matcher::UrlEncoded("format".into(), "json".into()),
+            ]))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body("this is not json")
@@ -891,6 +905,10 @@ mod tests {
         let mut server = mockito::Server::new_async().await;
         server
             .mock("GET", "/api/appid.php")
+            .match_query(mockito::Matcher::UrlEncoded(
+                "appid".into(),
+                "400".into(),
+            ))
             .with_status(429)
             .create_async()
             .await;
