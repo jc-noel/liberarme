@@ -141,10 +141,17 @@ async fn fetch_pcgamingwiki_evidence_at(
         .build()
         .map_err(|e| format!("Failed to create PCGamingWiki HTTP client: {e}"))?;
 
-    let redirect_url = format!("{}/api/appid.php", redirect_base.trim_end_matches('/'));
+    let mut redirect_url = reqwest::Url::parse(&format!(
+        "{}/api/appid.php",
+        redirect_base.trim_end_matches('/')
+    ))
+    .map_err(|e| format!("Invalid PCGamingWiki redirect URL: {e}"))?;
+    redirect_url
+        .query_pairs_mut()
+        .append_pair("appid", &steam_app_id.to_string());
+
     let response = client
-        .get(&redirect_url)
-        .query(&[("appid", steam_app_id)])
+        .get(redirect_url)
         .send()
         .await
         .map_err(|e| format!("PCGamingWiki network error: {e}"))?;
@@ -181,16 +188,23 @@ async fn fetch_pcgamingwiki_evidence_at(
     let page_title = page_title_from_location(location)?;
     let source_url = canonical_page_url(location, redirect_base);
 
-    let parse_url = format!("{}/w/api.php", api_base.trim_end_matches('/'));
+    let mut parse_url = reqwest::Url::parse(&format!(
+        "{}/w/api.php",
+        api_base.trim_end_matches('/')
+    ))
+    .map_err(|e| format!("Invalid PCGamingWiki API URL: {e}"))?;
+    {
+        let mut pairs = parse_url.query_pairs_mut();
+        pairs
+            .append_pair("action", "parse")
+            .append_pair("redirects", "1")
+            .append_pair("prop", "wikitext")
+            .append_pair("page", &page_title)
+            .append_pair("format", "json");
+    }
+
     let parse_response = client
-        .get(&parse_url)
-        .query(&[
-            ("action", "parse"),
-            ("redirects", "1"),
-            ("prop", "wikitext"),
-            ("page", page_title.as_str()),
-            ("format", "json"),
-        ])
+        .get(parse_url)
         .send()
         .await
         .map_err(|e| format!("PCGamingWiki network error: {e}"))?;
