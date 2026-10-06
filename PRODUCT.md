@@ -4,7 +4,7 @@
 
 ## Platform
 
-web
+Desktop (Tauri)
 
 ## Users
 
@@ -12,11 +12,11 @@ Primarily PC gamers auditing their own Steam library to find out which owned gam
 
 ## Product Purpose
 
-A local-first desktop app that scans a user's installed Steam library, classifies which games are launcher-independent, surfaces DRM-free alternatives, and preserves verified games through archiving. Success means a user can see, at a glance, which of their owned games survive without Steam.
+A local-first desktop app that inventories a user's Steam library, gathers preservation evidence, helps the user verify launcher-independence locally, archives verified copies, and surfaces known legitimate DRM-free alternatives for launcher-dependent games. Success means a user can understand what survives without Steam, why Liberarme believes that, and what can be preserved safely.
 
 ## Positioning
 
-Mostly (per user): automated local scan + verification — Liberarme scans the actual installed library and verifies launcher-independence directly, rather than requiring the user to manually cross-reference sites like PCGamingWiki or GOG DRM-free lists. Secondarily, it goes further than detection by archiving verified DRM-free copies, and — longer-term — matching to alternative stores and tracking pricing (see Roadmap: Classification Engine, Evidence System, Local Verification, Archive System, Store Matching, Price Intelligence).
+Liberarme is not a general game launcher or metadata manager. Its differentiator is the preservation loop: inventory → evidence → preservation assessment → local verification → archive, with legitimate DRM-free alternatives for games that remain launcher-dependent. Existing community/reference sources should be integrated rather than recreated where practical.
 
 ## Operating Context
 
@@ -44,5 +44,5 @@ None beyond the shipped Steam scanner UI itself (game list with title, app ID, i
 
 1. Local-first and user-owned: no data leaves the device unless the user explicitly chooses otherwise.
 2. Detection and preservation, not circumvention: the product's legitimacy rests on verifying and archiving, never bypassing DRM.
-3. Steam first, depth over breadth: nail one storefront's classification/evidence/archive loop before expanding to other stores.
-4. Evidence-backed classification: launcher-independence claims should be verifiable, not guessed.
+3. Steam first, depth over breadth: nail one storefront's evidence/verification/archive loop before expanding to other library sources.
+4. Evidence over certainty: preservation assessments must be explainable, conservative, and revisable when stronger evidence appears.
