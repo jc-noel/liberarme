@@ -21,16 +21,16 @@ Mostly (per user): automated local scan + verification — Liberarme scans the a
 ## Operating Context
 
 - Desktop app (Tauri + Rust backend, SvelteKit + TypeScript frontend, SQLite for local storage, Bun for package/scripts).
-- Current milestone: Steam Scanner (locate/scan installed Steam library, list games with install path/size, sync to local DB).
+- Current v1 milestone: Evidence System → Preservation Assessment → Local Verification → Archive System → DRM-free Alternatives → Release Hardening.
 - Steam integration requires the user's own Steam Web API key and SteamID64, entered and stored locally in Settings; a vanity-URL resolver helps users find their SteamID64.
-- Upcoming milestones (ROADMAP.md): Classification Engine, Evidence System, Local Verification, Archive System, Store Matching, Price Intelligence. Icebox (not current scope): Community Features, Multi-Store Libraries, Cloud Sync.
+- The v1 release sequence is tracked in `ROADMAP.md` and umbrella issue #65.
 
 ## Capabilities and Constraints
 
 - Local-first, no cloud sync by default: scan results, credentials, and archives stay on-device unless the user later opts in to something else.
 - Steam-only for now; other storefronts/libraries are explicitly deferred (Icebox: Multi-Store Libraries).
 - No legal/DRM-circumvention claims or functionality: the product detects, classifies, and verifies launcher-independence and archives DRM-free copies — it must never claim or imply it cracks, bypasses, or circumvents DRM.
-- Project is Pre-Alpha; current implementation covers Steam library scanning and settings only. Classification, evidence, verification, archiving, and store-matching are not yet built.
+- Project is Pre-Alpha. Steam scanning, ownership sync, local persistence, and the unified owned/installed library are implemented. Evidence, preservation assessment, local verification, archiving, DRM-free alternatives, and release hardening remain for v1.
 
 ## Brand Commitments
 
