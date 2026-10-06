@@ -17,9 +17,19 @@ Pre-Alpha
 - Bun
 - SQLite
 
-## Initial Goal
+## Current v1 Focus
 
-Scan a local Steam library and display detected games.
+The Steam inventory foundation is complete: local scanning, owned-game sync, SQLite persistence, and a unified owned/installed library are implemented.
+
+The v1 release now focuses on:
+
+1. evidence-backed preservation assessment
+2. guided local verification
+3. archiving locally verified launcher-independent games
+4. known legitimate DRM-free alternatives for launcher-dependent games
+5. public-release hardening
+
+See `ROADMAP.md` and GitHub issue #65 for the build order and v1 definition of done.
 
 ## Setup
 
