@@ -26,7 +26,7 @@ pub struct SteamSyncMetadata {
     pub last_sync_error: Option<String>,  // error mss if last sync failed
 }
 
-const CURRENT_SCHEMA_VERSION: i64 = 2;
+const CURRENT_SCHEMA_VERSION: i64 = 3;
 
 /// inits sqlite db schema
 /// creates `games` table if does not exist.
@@ -45,9 +45,13 @@ pub fn init_db(conn: &Connection) -> Result<()> {
         .and_then(|v| v.parse().ok())
         .unwrap_or(1);
     
-    if stored_version < CURRENT_SCHEMA_VERSION {
-        // pre-alpha migration strategy: no real user data worth preserving yet
-        // if this bites you in the butt, just know it will be fixed eventually
+    if stored_version < 2 {
+        // Legacy pre-v2 migration: the old games schema did not contain the
+        // ownership/install-state columns introduced in schema version 2.
+        //
+        // Keep this destructive migration scoped to pre-v2 databases only.
+        // Later schema bumps (including v3's evidence table) must not erase
+        // an existing user's library.
         conn.execute("DROP TABLE IF EXISTS games", [])?;
     }
     // games table
@@ -66,6 +70,32 @@ pub fn init_db(conn: &Connection) -> Result<()> {
             owned_synced_at INTEGER,
             synced_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
         )",
+        [],
+    )?;
+
+    // Evidence is append-only source material used by later assessment and
+    // verification services. It intentionally lives beside the games table
+    // rather than adding source-specific columns to GameRecord.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS evidence (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id TEXT NOT NULL,
+            source_type TEXT NOT NULL,
+            source_name TEXT NOT NULL,
+            source_url TEXT,
+            claim_type TEXT NOT NULL,
+            claim TEXT NOT NULL,
+            confidence TEXT,
+            captured_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+            metadata_json TEXT,
+            FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE
+        )",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_evidence_game_id
+         ON evidence(game_id)",
         [],
     )?;
 
@@ -306,6 +336,182 @@ pub fn upsert_owned_games(conn: &Connection, games: &[(u32, String)]) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_evidence_table_stores_multiple_and_conflicting_entries() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_db(&conn).unwrap();
+
+        let game = GameRecord {
+            id: "steam_400".to_string(),
+            steam_app_id: 400,
+            title: "Portal".to_string(),
+            normalized_title: "portal".to_string(),
+            is_owned: true,
+            is_installed: true,
+            install_path: Some("/path/to/Portal".to_string()),
+            install_size: Some(1000),
+            last_updated: Some(1625000000),
+            owned_synced_at: Some(1625000000),
+            synced_at: 0,
+        };
+        upsert_game(&conn, &game).unwrap();
+
+        conn.execute(
+            "INSERT INTO evidence (
+                game_id, source_type, source_name, source_url,
+                claim_type, claim, confidence, captured_at, metadata_json
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                "steam_400",
+                "reference",
+                "PCGamingWiki",
+                Some("https://www.pcgamingwiki.com/wiki/Portal"),
+                "launcher_requirement",
+                "Steam is not required after installation",
+                Some("medium"),
+                1_700_000_000_i64,
+                Some(r#"{"field":"DRM"}"#),
+            ],
+        )
+        .unwrap();
+
+        conn.execute(
+            "INSERT INTO evidence (
+                game_id, source_type, source_name, source_url,
+                claim_type, claim, confidence, captured_at, metadata_json
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                "steam_400",
+                "local_verification",
+                "User verification",
+                Option::<String>::None,
+                "launcher_requirement",
+                "Launch failed while Steam was closed",
+                Some("high"),
+                1_700_000_100_i64,
+                Option::<String>::None,
+            ],
+        )
+        .unwrap();
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT source_type, source_name, source_url, claim_type, claim,
+                        confidence, captured_at, metadata_json
+                 FROM evidence
+                 WHERE game_id = ?1
+                 ORDER BY captured_at ASC",
+            )
+            .unwrap();
+
+        let rows = stmt
+            .query_map(params!["steam_400"], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, Option<String>>(5)?,
+                    row.get::<_, i64>(6)?,
+                    row.get::<_, Option<String>>(7)?,
+                ))
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>>>()
+            .unwrap();
+
+        assert_eq!(rows.len(), 2, "conflicting evidence should be retained, not overwritten");
+        assert_eq!(rows[0].0, "reference");
+        assert_eq!(rows[0].1, "PCGamingWiki");
+        assert_eq!(
+            rows[0].2.as_deref(),
+            Some("https://www.pcgamingwiki.com/wiki/Portal")
+        );
+        assert_eq!(rows[0].3, "launcher_requirement");
+        assert_eq!(rows[0].5.as_deref(), Some("medium"));
+        assert_eq!(rows[0].7.as_deref(), Some(r#"{"field":"DRM"}"#));
+
+        assert_eq!(rows[1].0, "local_verification");
+        assert_eq!(rows[1].1, "User verification");
+        assert_eq!(rows[1].2, None);
+        assert_eq!(rows[1].3, "launcher_requirement");
+        assert_eq!(rows[1].5.as_deref(), Some("high"));
+        assert_eq!(rows[1].7, None);
+
+        assert_ne!(rows[0].4, rows[1].4, "opposing claims should coexist");
+    }
+
+    #[test]
+    fn test_schema_v3_upgrade_preserves_existing_games_and_adds_evidence() {
+        let conn = Connection::open_in_memory().unwrap();
+
+        conn.execute(
+            "CREATE TABLE app_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )",
+            [],
+        )
+        .unwrap();
+
+        conn.execute(
+            "CREATE TABLE games (
+                id TEXT PRIMARY KEY,
+                steam_app_id INTEGER UNIQUE NOT NULL,
+                title TEXT NOT NULL,
+                normalized_title TEXT NOT NULL,
+                is_owned INTEGER NOT NULL DEFAULT 0,
+                is_installed INTEGER NOT NULL DEFAULT 0,
+                install_path TEXT,
+                install_size INTEGER,
+                last_updated INTEGER,
+                created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+                owned_synced_at INTEGER,
+                synced_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+            )",
+            [],
+        )
+        .unwrap();
+
+        set_setting(&conn, "schema_version", "2").unwrap();
+        conn.execute(
+            "INSERT INTO games (
+                id, steam_app_id, title, normalized_title, is_owned, is_installed
+             ) VALUES ('steam_400', 400, 'Portal', 'portal', 1, 1)",
+            [],
+        )
+        .unwrap();
+
+        init_db(&conn).unwrap();
+
+        let games = get_all_games(&conn).unwrap();
+        assert_eq!(games.len(), 1, "v2 -> v3 must preserve the existing library");
+        assert_eq!(games[0].steam_app_id, 400);
+        assert_eq!(
+            get_setting(&conn, "schema_version").unwrap(),
+            Some(CURRENT_SCHEMA_VERSION.to_string())
+        );
+
+        conn.execute(
+            "INSERT INTO evidence (
+                game_id, source_type, source_name, claim_type, claim
+             ) VALUES ('steam_400', 'manual', 'Test', 'launcher_requirement', 'Unknown')",
+            [],
+        )
+        .unwrap();
+
+        let evidence_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM evidence WHERE game_id = 'steam_400'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(evidence_count, 1);
+    }
 
     #[test]
     fn test_ownership_sync_survives_a_subsequent_local_rescan() {
