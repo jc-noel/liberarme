@@ -4,7 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use reqwest::header::LOCATION;
 use reqwest::redirect::Policy;
 use rusqlite::Connection;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::services::evidence::{
@@ -18,7 +18,7 @@ const PCGW_CACHE_TTL_SECS: u64 = 7 * 24 * 60 * 60;
 const PCGW_USER_AGENT: &str =
     "Liberarme/0.1 (+https://github.com/jc-noel/liberarme; preservation evidence lookup)";
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct PcgwSyncResult {
     pub evidence: Vec<EvidenceRecord>,
     pub from_cache: bool,
@@ -54,6 +54,64 @@ struct SteamAvailability {
     notes: Option<String>,
 }
 
+pub fn fresh_cached_pcgamingwiki_evidence(
+    conn: &Connection,
+    game_id: &str,
+    now: u64,
+    force_refresh: bool,
+) -> Result<Option<PcgwSyncResult>, String> {
+    let cached: Vec<EvidenceRecord> = get_evidence_for_game(conn, game_id)
+        .map_err(|e| format!("Failed to read cached PCGamingWiki evidence: {e}"))?
+        .into_iter()
+        .filter(|row| row.source_name == PCGW_SOURCE_NAME)
+        .collect();
+
+    if force_refresh {
+        return Ok(None);
+    }
+
+    let newest_cached = cached.iter().map(|row| row.captured_at).max();
+    if let Some(captured_at) = newest_cached {
+        if now.saturating_sub(captured_at) < PCGW_CACHE_TTL_SECS {
+            return Ok(Some(PcgwSyncResult {
+                evidence: cached,
+                from_cache: true,
+            }));
+        }
+    }
+
+    Ok(None)
+}
+
+pub async fn fetch_pcgamingwiki_evidence(
+    game_id: &str,
+    steam_app_id: u32,
+    captured_at: u64,
+) -> Result<Vec<EvidenceInput>, String> {
+    fetch_pcgamingwiki_evidence_at(
+        game_id,
+        steam_app_id,
+        captured_at,
+        PCGW_REDIRECT_BASE,
+        PCGW_API_BASE,
+    )
+    .await
+}
+
+pub fn store_pcgamingwiki_evidence(
+    conn: &Connection,
+    inputs: Vec<EvidenceInput>,
+) -> Result<Vec<EvidenceRecord>, String> {
+    let mut saved = Vec::with_capacity(inputs.len());
+    for input in inputs {
+        saved.push(
+            record_evidence(conn, &input)
+                .map_err(|e| format!("Failed to store PCGamingWiki evidence: {e}"))?,
+        );
+    }
+    Ok(saved)
+}
+
 pub async fn sync_pcgamingwiki_evidence(
     conn: &Connection,
     game_id: &str,
@@ -86,23 +144,10 @@ async fn sync_pcgamingwiki_evidence_at(
     redirect_base: &str,
     api_base: &str,
 ) -> Result<PcgwSyncResult, String> {
-    let cached: Vec<EvidenceRecord> = get_evidence_for_game(conn, game_id)
-        .map_err(|e| format!("Failed to read cached PCGamingWiki evidence: {e}"))?
-        .into_iter()
-        .filter(|row| row.source_name == PCGW_SOURCE_NAME)
-        .collect();
-
-    let newest_cached = cached.iter().map(|row| row.captured_at).max();
-
-    if !force_refresh {
-        if let Some(captured_at) = newest_cached {
-            if now.saturating_sub(captured_at) < PCGW_CACHE_TTL_SECS {
-                return Ok(PcgwSyncResult {
-                    evidence: cached,
-                    from_cache: true,
-                });
-            }
-        }
+    if let Some(cached) =
+        fresh_cached_pcgamingwiki_evidence(conn, game_id, now, force_refresh)?
+    {
+        return Ok(cached);
     }
 
     let inputs = fetch_pcgamingwiki_evidence_at(
@@ -114,13 +159,7 @@ async fn sync_pcgamingwiki_evidence_at(
     )
     .await?;
 
-    let mut saved = Vec::with_capacity(inputs.len());
-    for input in inputs {
-        saved.push(
-            record_evidence(conn, &input)
-                .map_err(|e| format!("Failed to store PCGamingWiki evidence: {e}"))?,
-        );
-    }
+    let saved = store_pcgamingwiki_evidence(conn, inputs)?;
 
     Ok(PcgwSyncResult {
         evidence: saved,
