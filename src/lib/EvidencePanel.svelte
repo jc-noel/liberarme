@@ -136,7 +136,7 @@
   }
 </script>
 
-<div class="backdrop" role="presentation" onclick={onclose}></div>
+<button class="backdrop" onclick={onclose} aria-label="Close evidence panel"></button>
 
 <aside class="evidence-panel" role="dialog" aria-modal="true" aria-labelledby="evidence-title">
   <header class="panel-header">
@@ -226,7 +226,7 @@
             </div>
 
             {#if item.source_url}
-              <button class="source-link" onclick={() => openSource(item.source_url!)}>
+              <button class="source-link" onclick={() => item.source_url && openSource(item.source_url)}>
                 Open source
               </button>
             {/if}
@@ -240,6 +240,8 @@
 <style>
   .backdrop {
     position: fixed;
+    border: 0;
+    padding: 0;
     inset: 0;
     background: rgba(3, 7, 12, 0.62);
     z-index: 40;
