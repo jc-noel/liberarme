@@ -138,7 +138,7 @@
 
 <button class="backdrop" onclick={onclose} aria-label="Close evidence panel"></button>
 
-<aside class="evidence-panel" role="dialog" aria-modal="true" aria-labelledby="evidence-title">
+<div class="evidence-panel" role="dialog" aria-modal="true" aria-labelledby="evidence-title">
   <header class="panel-header">
     <div>
       <p class="eyebrow">Preservation evidence</p>
@@ -235,7 +235,7 @@
       {/each}
     </div>
   {/if}
-</aside>
+</div>
 
 <style>
   .backdrop {
