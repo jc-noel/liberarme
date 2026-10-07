@@ -26,7 +26,18 @@ pub struct SteamSyncMetadata {
     pub last_sync_error: Option<String>,  // error mss if last sync failed
 }
 
-const CURRENT_SCHEMA_VERSION: i64 = 3;
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GameAssessmentRecord {
+    pub game_id: String,
+    pub status: String,
+    pub launcher_requirement: Option<String>,
+    pub internet_requirement: Option<String>,
+    pub confidence: String,
+    pub basis: Option<String>,
+    pub updated_at: u64,
+}
+
+const CURRENT_SCHEMA_VERSION: i64 = 4;
 
 /// inits sqlite db schema
 /// creates `games` table if does not exist.
@@ -96,6 +107,24 @@ pub fn init_db(conn: &Connection) -> Result<()> {
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_evidence_game_id
          ON evidence(game_id)",
+        [],
+    )?;
+
+
+    // One current preservation assessment per game. Evidence and verification
+    // history stay in their own append-only tables; this row is only the
+    // current, explainable summary derived from those records.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS game_assessments (
+            game_id TEXT PRIMARY KEY,
+            status TEXT NOT NULL DEFAULT 'unknown',
+            launcher_requirement TEXT,
+            internet_requirement TEXT,
+            confidence TEXT NOT NULL DEFAULT 'none',
+            basis TEXT,
+            updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+            FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE
+        )",
         [],
     )?;
 
@@ -221,6 +250,67 @@ pub fn get_installed_games_only(conn: &Connection) -> Result<Vec<GameRecord>> {
     }
 
     Ok(games)
+}
+
+/// Insert or replace the current preservation assessment for a game.
+///
+/// The game_id primary key guarantees there is only one current assessment per
+/// game. Historical evidence and verification records are intentionally kept
+/// elsewhere.
+pub fn upsert_game_assessment(
+    conn: &Connection,
+    assessment: &GameAssessmentRecord,
+) -> Result<()> {
+    conn.execute(
+        "INSERT INTO game_assessments (
+            game_id, status, launcher_requirement, internet_requirement,
+            confidence, basis, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+         ON CONFLICT(game_id) DO UPDATE SET
+            status = excluded.status,
+            launcher_requirement = excluded.launcher_requirement,
+            internet_requirement = excluded.internet_requirement,
+            confidence = excluded.confidence,
+            basis = excluded.basis,
+            updated_at = excluded.updated_at",
+        params![
+            assessment.game_id,
+            assessment.status,
+            assessment.launcher_requirement,
+            assessment.internet_requirement,
+            assessment.confidence,
+            assessment.basis,
+            assessment.updated_at as i64,
+        ],
+    )?;
+
+    Ok(())
+}
+
+pub fn get_game_assessment(
+    conn: &Connection,
+    game_id: &str,
+) -> Result<Option<GameAssessmentRecord>> {
+    conn.query_row(
+        "SELECT game_id, status, launcher_requirement, internet_requirement,
+                confidence, basis, updated_at
+         FROM game_assessments
+         WHERE game_id = ?1",
+        params![game_id],
+        |row| {
+            let updated_at: i64 = row.get(6)?;
+            Ok(GameAssessmentRecord {
+                game_id: row.get(0)?,
+                status: row.get(1)?,
+                launcher_requirement: row.get(2)?,
+                internet_requirement: row.get(3)?,
+                confidence: row.get(4)?,
+                basis: row.get(5)?,
+                updated_at: updated_at as u64,
+            })
+        },
+    )
+    .optional()
 }
 
 /// inserts or updates a setting value by key
@@ -894,6 +984,130 @@ mod tests {
         assert_eq!(updated_games.len(), 1); // Still 1 record
         assert_eq!(updated_games[0].title, "Portal (Updated)");
         assert_eq!(updated_games[0].install_size, Some(5000000000));
+    }
+
+    #[test]
+    fn test_game_assessment_insert_read_and_update_keeps_one_current_row() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_db(&conn).unwrap();
+
+        let game = GameRecord {
+            id: "steam_400".to_string(),
+            steam_app_id: 400,
+            title: "Portal".to_string(),
+            normalized_title: "portal".to_string(),
+            is_owned: true,
+            is_installed: true,
+            install_path: Some("/path/to/Portal".to_string()),
+            install_size: Some(1000),
+            last_updated: Some(1_625_000_000),
+            owned_synced_at: Some(1_625_000_000),
+            synced_at: 0,
+        };
+        upsert_game(&conn, &game).unwrap();
+
+        let initial = GameAssessmentRecord {
+            game_id: game.id.clone(),
+            status: "unknown".to_string(),
+            launcher_requirement: None,
+            internet_requirement: None,
+            confidence: "none".to_string(),
+            basis: None,
+            updated_at: 1_800_000_000,
+        };
+        upsert_game_assessment(&conn, &initial).unwrap();
+
+        assert_eq!(
+            get_game_assessment(&conn, &game.id).unwrap(),
+            Some(initial.clone())
+        );
+
+        let updated = GameAssessmentRecord {
+            game_id: game.id.clone(),
+            status: "needs_verification".to_string(),
+            launcher_requirement: Some("unknown".to_string()),
+            internet_requirement: Some("online_at_launch".to_string()),
+            confidence: "medium".to_string(),
+            basis: Some("External evidence requires local confirmation.".to_string()),
+            updated_at: 1_800_000_100,
+        };
+        upsert_game_assessment(&conn, &updated).unwrap();
+
+        assert_eq!(
+            get_game_assessment(&conn, &game.id).unwrap(),
+            Some(updated)
+        );
+
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM game_assessments WHERE game_id = ?1",
+                params![game.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1, "only one current assessment should exist per game");
+    }
+
+    #[test]
+    fn test_get_game_assessment_missing_returns_none() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_db(&conn).unwrap();
+
+        assert_eq!(
+            get_game_assessment(&conn, "steam_missing").unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn test_schema_v4_upgrade_preserves_games_and_evidence_and_adds_assessments() {
+        let conn = Connection::open_in_memory().unwrap();
+
+        // Build a schema-v3 database with an existing game and evidence row.
+        init_db(&conn).unwrap();
+        set_setting(&conn, "schema_version", "3").unwrap();
+
+        let game = GameRecord {
+            id: "steam_400".to_string(),
+            steam_app_id: 400,
+            title: "Portal".to_string(),
+            normalized_title: "portal".to_string(),
+            is_owned: true,
+            is_installed: true,
+            install_path: Some("/path/to/Portal".to_string()),
+            install_size: Some(1000),
+            last_updated: Some(1_625_000_000),
+            owned_synced_at: Some(1_625_000_000),
+            synced_at: 0,
+        };
+        upsert_game(&conn, &game).unwrap();
+        conn.execute(
+            "INSERT INTO evidence (
+                game_id, source_type, source_name, claim_type, claim, captured_at
+             ) VALUES (?1, 'reference', 'Fixture', 'steam_drm', 'DRM-free', ?2)",
+            params![game.id, 1_700_000_000_i64],
+        )
+        .unwrap();
+
+        conn.execute("DROP TABLE game_assessments", []).unwrap();
+
+        init_db(&conn).unwrap();
+
+        assert_eq!(
+            get_setting(&conn, "schema_version").unwrap(),
+            Some(CURRENT_SCHEMA_VERSION.to_string())
+        );
+        assert_eq!(get_all_games(&conn).unwrap().len(), 1);
+
+        let evidence_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM evidence", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(evidence_count, 1);
+
+        let assessment_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM game_assessments", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(assessment_count, 0);
     }
 
     #[test]
