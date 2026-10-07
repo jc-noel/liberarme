@@ -2,8 +2,9 @@
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { getStatusLabel, isMissingCredentialsError } from "$lib/libraryHelpers";
+  import EvidencePanel from "$lib/EvidencePanel.svelte";
 
-  let games: Array<{
+  type GameRow = {
     id: string;
     steam_app_id: number;
     title: string;
@@ -13,7 +14,10 @@
     synced_at: number;
     is_installed: boolean;
     is_owned: boolean;
-  }> = [];
+  };
+
+  let games: GameRow[] = [];
+  let selectedGame: GameRow | null = null;
 
   let loading = false;
   let loadingLabel = "";
@@ -254,6 +258,7 @@
           <th>App ID</th>
           <th>Size</th>
           <th>Activity</th>
+          <th>Evidence</th>
         </tr>
       </thead>
       <tbody>
@@ -274,11 +279,20 @@
                 <div>synced: {formatDate(game.synced_at)}</div>
               </div>
             </td>
+            <td>
+              <button class="evidence-btn" onclick={() => (selectedGame = game)}>
+                Inspect
+              </button>
+            </td>
           </tr>
         {/each}
       </tbody>
     </table>
   </div>
+{/if}
+
+{#if selectedGame}
+  <EvidencePanel game={selectedGame} onclose={() => (selectedGame = null)} />
 {/if}
 
 <style>
@@ -486,5 +500,19 @@
     gap: 4px;
     font-size: 0.9rem;
     color: #94a3b8;
+  }
+
+  .evidence-btn {
+    border: 1px solid #3f5fd9;
+    border-radius: 8px;
+    padding: 7px 10px;
+    background: rgba(91, 124, 255, 0.1);
+    color: #93a9ff;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .evidence-btn:hover {
+    background: rgba(91, 124, 255, 0.18);
   }
 </style>
