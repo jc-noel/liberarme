@@ -3,6 +3,8 @@ mod services;
 use rusqlite::Connection;
 use serde::Serialize;
 use services::db::{self, GameRecord, SteamSyncMetadata};
+use services::evidence::{self, EvidenceRecord};
+use services::pcgamingwiki::{self, PcgwSyncResult};
 use services::steam::scanner;
 use services::steam::vanity;
 use services::steam::owned_games;
@@ -47,6 +49,55 @@ fn get_installed_games(state: State<AppState>) -> Result<Vec<GameRecord>, String
 fn get_all_games(state: State<AppState>) -> Result<Vec<GameRecord>, String> {
     let conn = state.db_conn.lock().map_err(|e| e.to_string())?;
     db::get_all_games(&conn).map_err(|e| e.to_string())
+}
+
+
+#[tauri::command]
+fn get_game_evidence(
+    state: State<AppState>,
+    game_id: String,
+) -> Result<Vec<EvidenceRecord>, String> {
+    let conn = state.db_conn.lock().map_err(|e| e.to_string())?;
+    evidence::get_evidence_for_game(&conn, &game_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn refresh_pcgamingwiki_evidence(
+    state: State<'_, AppState>,
+    game_id: String,
+    steam_app_id: u32,
+    force_refresh: bool,
+) -> Result<PcgwSyncResult, String> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("System clock error: {e}"))?
+        .as_secs();
+
+    // Read the cache while the DB is locked, then release the lock before
+    // making any network request.
+    {
+        let conn = state.db_conn.lock().map_err(|e| e.to_string())?;
+        if let Some(cached) = pcgamingwiki::fresh_cached_pcgamingwiki_evidence(
+            &conn,
+            &game_id,
+            now,
+            force_refresh,
+        )? {
+            return Ok(cached);
+        }
+    }
+
+    let inputs =
+        pcgamingwiki::fetch_pcgamingwiki_evidence(&game_id, steam_app_id, now).await?;
+
+    // Reacquire the DB only after the network request has completed.
+    let conn = state.db_conn.lock().map_err(|e| e.to_string())?;
+    let saved = pcgamingwiki::store_pcgamingwiki_evidence(&conn, inputs)?;
+
+    Ok(PcgwSyncResult {
+        evidence: saved,
+        from_cache: false,
+    })
 }
 
 /// sets/saves api key and steam id to settings
@@ -294,6 +345,8 @@ pub fn run() {
             scan_steam_games,
             get_installed_games,
             get_all_games,
+            get_game_evidence,
+            refresh_pcgamingwiki_evidence,
             set_steam_settings,
             get_steam_settings,
             resolve_steam_id,
